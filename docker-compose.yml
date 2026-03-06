@@ -19,7 +19,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     env_file:
-      - .watchtower_env
+      - .watchtower.env
     ports:
       - "6767:8080"
     command: waddles_bot
