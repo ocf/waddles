@@ -198,6 +198,7 @@ class OCFBot(commands.Bot):
         super().__init__(command_prefix=PREFIX, intents=intents, owner_ids=OWNER_IDS)
         self.index = None
         self.query_engine = None
+        self.active_queries = {}
 
     async def setup_hook(self):
         self.index = await asyncio.to_thread(build_or_load_index)
@@ -231,24 +232,32 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
         await ctx.reply("I'm still warming up my brain, try again in a sec!")
         return
 
+    user_id = ctx.author.id
+    query_id = ctx.message.id
+
+    # 1. Register this specific query as active
+    if user_id not in bot.active_queries:
+        bot.active_queries[user_id] = set()
+    bot.active_queries[user_id].add(query_id)
+
     msg = await ctx.reply("💭 Thinking deeply..." if use_thinking else "Processing...")
 
     async with ctx.typing():
         try:
             query_str = f"[{ctx.author.name}] says: \n{question}"
 
-            # 1. Retrieve the context nodes
+            # 2. Retrieve the context nodes
             retriever = bot.index.as_retriever(similarity_top_k=5)
             nodes = await retriever.aretrieve(query_str)
             context_str = "\n---------------------\n".join([n.get_content() for n in nodes])
 
-            # 2. Format the prompt
+            # 3. Format the prompt
             formatted_prompt = prompt_template_str.format(
                 context_str=context_str,
                 query_str=query_str
             )
 
-            # 3. Select Model & Stream
+            # 4. Select Model & Stream
             active_llm = llm_thinking if use_thinking else llm_standard
             response_stream = await active_llm.astream_complete(formatted_prompt)
 
@@ -258,6 +267,26 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
             last_edit_time = time.time()
 
             async for chunk in response_stream:
+                # --- 5. CHECK IF THIS QUERY WAS STOPPED ---
+                if query_id not in bot.active_queries.get(user_id, set()):
+                    stop_msg = "\n\n*[Stopped by user]*"
+
+                    # Formatting: If we only have thoughts so far, keep them visible.
+                    if thinking_text and not answer_text:
+                        truncated_thoughts = thinking_text if len(thinking_text) <= 1850 else "..." + thinking_text[-1850:]
+                        display_text = f"💭 **Thinking...**\n```text\n{truncated_thoughts}\n```{stop_msg}"
+                    else:
+                        answer_text += stop_msg
+                        display_text = answer_text
+
+                    # Force the HTTP disconnect to free the GPU
+                    if hasattr(response_stream, "aclose"):
+                        await response_stream.aclose()
+                    elif hasattr(response_stream, "close"):
+                        response_stream.close()
+                    break
+
+                # --- 6. NORMAL CHUNK PROCESSING ---
                 think_delta = chunk.additional_kwargs.get("thinking_delta", "")
 
                 if think_delta:
@@ -268,17 +297,26 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
                     answer_text += chunk.delta
                     display_text = answer_text
 
+                # Update Discord message every ~1.2 seconds to avoid ratelimits
                 current_time = time.time()
                 if current_time - last_edit_time > 1.2:
                     if display_text:
                         await msg.edit(content=display_text[:2000])
                     last_edit_time = current_time
 
-            final_content = answer_text if answer_text else "I couldn't think of anything to say."
+            # Final edit to ensure the last chunk (or the stop message) is sent
+            final_content = display_text if display_text else "I couldn't think of anything to say."
             await msg.edit(content=final_content[:2000])
 
         except Exception as e:
             await msg.edit(content=f"My circuits fried trying to answer that: {e}")
+        finally:
+            # 7. CLEANUP: Safely remove ONLY this specific query
+            if user_id in bot.active_queries:
+                bot.active_queries[user_id].discard(query_id)
+                # If the set is empty, clean up the dictionary key to save memory
+                if not bot.active_queries[user_id]:
+                    del bot.active_queries[user_id]
 
 # --- 6. COMMANDS ---
 @bot.event
@@ -339,8 +377,19 @@ async def thinkas(ctx, name: str, *, question: str):
     prompt = format_persona_prompt(data["prompt"])
     await process_query(ctx, question, prompt, use_thinking=True)
 
-# --- 7. PERSONA MANAGEMENT ---
+@bot.command(name="stop")
+@commands.guild_only()
+async def stop(ctx):
+    """Stops all of your ongoing response generations."""
+    user_id = ctx.author.id
 
+    if user_id in bot.active_queries and bot.active_queries[user_id]:
+        bot.active_queries[user_id].clear()
+        await ctx.reply("🛑 Stopping all your active generations...")
+    else:
+        await ctx.reply("You don't have any active queries to stop.")
+
+# --- 7. PERSONA MANAGEMENT ---
 @bot.group(name="persona", invoke_without_command=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
@@ -419,7 +468,7 @@ async def persona_view(ctx, name: str):
     await ctx.reply(f"**Persona:** `{name}`\n**Creator:** {creator}\n**Prompt:**\n```text\n{prompt_text}\n```")
 
 # --- 8. ADMIN UTILITIES ---
-@bot.command(name="note")
+@bot.command(name="note", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def note(ctx, *, content: str):
@@ -431,7 +480,7 @@ async def note(ctx, *, content: str):
     except Exception as e:
         await ctx.reply(f"❌ Failed to save note: {e}")
 
-@bot.command(name="reload")
+@bot.command(name="reload", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def reload(ctx):
@@ -443,7 +492,7 @@ async def reload(ctx):
     except Exception as e:
         await msg.edit(content=f"❌ Failed to update: {e}")
 
-@bot.command(name="reloadfull")
+@bot.command(name="reloadfull", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def reloadfull(ctx):
