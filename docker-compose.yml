@@ -1,0 +1,31 @@
+services:
+  bot:
+    image: ghcr.io/ocf/waddles:latest
+    container_name: waddles_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    network_mode: host
+    volumes:
+      - bot_cache:/app/cache
+      - bot_data:/app/data
+      - bot_storage:/app/storage
+      - bot_docs:/app/docs
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: waddles_watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .watchtower_env
+    ports:
+      - "6767:8080"
+    command: waddles_bot
+
+volumes:
+  bot_cache:
+  bot_data:
+  bot_storage:
+  bot_docs:
