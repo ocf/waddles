@@ -257,6 +257,19 @@ bot = OCFBot()
 async def on_ready():
     print(f"logged in as {bot.user} - ready to answer ocf questions!")
 
+@bot.command(name="ping")
+@commands.guild_only()
+async def ping(ctx):
+    """Checks the bot's latency."""
+    start_time = time.time()
+    message = await ctx.reply("Pinging...")
+    end_time = time.time()
+
+    api_latency = round(bot.latency * 1000)
+    round_trip = round((end_time - start_time) * 1000)
+
+    await message.edit(content=f"🏓 **Pong!**\nWebsocket: `{api_latency}ms`\nRound-trip: `{round_trip}ms`")
+
 @bot.command(name="ask")
 @commands.guild_only()
 async def ask(ctx, *, question: str):
