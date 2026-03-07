@@ -265,9 +265,22 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
         try:
             query_str = f"[{ctx.author.name}] says: \n{question}"
 
+            # 1.5. Generate optimized search query
+            await msg.edit(content="🔍 Formulating search query...")
+            query_gen_prompt = (
+                "You are an AI assistant helping a user find information. "
+                "Convert the user's question into a concise, keyword-rich search query optimized for vector database retrieval.\n\n"
+                f"User Question: {question}\n\n"
+                "Return ONLY the search query text, without quotes or extra explanations:"
+            )
+            search_query_response = await llm_standard.acomplete(query_gen_prompt)
+            search_query = search_query_response.text.strip()
+            
+            await msg.edit(content=f"🔍 Searching docs for: `{search_query}`...")
+
             # 2. Retrieve the context nodes
             retriever = bot.index.as_retriever(similarity_top_k=5)
-            nodes = await retriever.aretrieve(query_str)
+            nodes = await retriever.aretrieve(search_query)
             context_str = "\n---------------------\n".join([n.get_content() for n in nodes])
 
             # 3. Format the prompt
