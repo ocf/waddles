@@ -25,7 +25,7 @@ from llama_index.core import Document
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.tools import FunctionTool
 from bs4 import BeautifulSoup
-from duckduckgo_search import AsyncDDGS
+from duckduckgo_search import DDGS
 
 # --- 1. ENV VARS ---
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -272,7 +272,7 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
             async def search_web(query: str) -> str:
                 """Useful to search the internet for recent news and facts not related to OCF."""
                 try:
-                    results = await AsyncDDGS().text(query, max_results=3)
+                    results = list(DDGS().text(query, max_results=3))
                     if not results: return "No web results found."
                     return "\n\n".join([f"Source: {r['href']}\n{r['body']}" for r in results])
                 except Exception as e:
@@ -319,10 +319,7 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
                         res_text = await search_docs(tool_query)
                         context_pieces.append(f"--- DOCS RESULTS FOR '{tool_query}' ---\n{res_text}")
             else:
-                 # Fallback to docs if no tool called
-                 await msg.edit(content=f"🔍 Searching Docs for: `{question}`...")
-                 res_text = await search_docs(question)
-                 context_pieces.append(f"--- DOCS RESULTS FOR '{question}' ---\n{res_text}")
+                await msg.edit(content=f"🔍 No tool called.")
             
             context_str = "\n\n".join(context_pieces)
 
