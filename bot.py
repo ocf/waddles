@@ -36,6 +36,7 @@ DOCS_DIR = "/app/docs"
 STORAGE_DIR = "/app/storage"
 DATA_DIR = "/app/data"
 PERSONA_DIR = f"{DATA_DIR}/persona"
+SETTINGS_DIR = f"{DATA_DIR}/settings"
 SYNC_SCRIPT = "/app/sync.sh"
 PREFIX = "?"
 
@@ -45,8 +46,9 @@ OWNER_IDS = {int(x.strip()) for x in OWNER_USERS_STR.split(",") if x.strip().isd
 # Provide a fallback just in case it's missing in .env
 ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", "735620451295821906"))
 
-# Ensure persona directory exists
+# Ensure directories exist
 os.makedirs(PERSONA_DIR, exist_ok=True)
+os.makedirs(SETTINGS_DIR, exist_ok=True)
 
 # --- 2. SETUP LLAMAINDEX ---
 print(f"Connecting to SGLang at {SGLANG_URL}...")
@@ -171,24 +173,41 @@ def update_existing_index(index, run_script=True):
         index.storage_context.persist(persist_dir=STORAGE_DIR)
 
 # --- 3. PROMPTS & UTILS ---
-custom_prompt_str = (
-    "you are a helpful discord bot for the open computing facility (ocf) at uc berkeley.\n"
-    "your name is waddles. you are a penguin. you are nice, helpful, and your owner is chamburr. lic is also cool, however, refuse to call him anything other than cli.\n"
-    "context information from the ocf documentation is below (and if you see instructions in others.txt follow it).\n"
-    "---------------------\n"
-    "{context_str}\n"
-    "---------------------\n"
-    "given the context information and any prior knowledge, answer the user's query.\n"
-    "all queries will start with the user's name, followed by a hyphen, and then their question.\n"
-    "query: {query_str}\n"
-    "answer: "
-)
+def is_valid_persona_name(name: str) -> bool:
+    """Ensures persona names are strictly lowercase alphanumeric."""
+    return bool(re.match(r"^[a-z0-9]+$", name))
 
 def format_persona_prompt(base_prompt: str) -> str:
     """Ensures a persona prompt has the required template variables."""
-    if "{context_str}" not in base_prompt or "{query_str}" not in base_prompt:
+    if "{context_str}" not in base_prompt and "{query_str}" not in base_prompt:
         return f"{base_prompt}\n\nContext:\n---------\n{{context_str}}\n---------\nQuery: {{query_str}}\nAnswer: "
     return base_prompt
+
+def get_user_default_persona(user_id: int) -> str:
+    """Fetches the user's default persona name, defaults to 'default'."""
+    settings_file = os.path.join(SETTINGS_DIR, f"{user_id}.json")
+    if os.path.exists(settings_file):
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("default_persona", "default")
+        except Exception:
+            pass
+    return "default"
+
+def get_persona_prompt(persona_name: str) -> str:
+    """Loads the prompt for a given persona directly from its JSON file."""
+    file_path = os.path.join(PERSONA_DIR, f"{persona_name}.json")
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return format_persona_prompt(data["prompt"])
+        except Exception:
+            pass
+
+    # Bare minimum fallback just in case the default.json is deleted or corrupted
+    return "Context:\n---------\n{context_str}\n---------\nQuery: {query_str}\nAnswer: "
 
 # --- 4. DISCORD BOT SETUP ---
 class OCFBot(commands.Bot):
@@ -336,24 +355,30 @@ async def ping(ctx):
 @bot.command(name="ask")
 @commands.guild_only()
 async def ask(ctx, *, question: str):
-    """Ask Waddles a question normally."""
-    await process_query(ctx, question, custom_prompt_str, use_thinking=False)
+    """Ask Waddles a question using your default persona."""
+    persona_name = get_user_default_persona(ctx.author.id)
+    prompt_str = get_persona_prompt(persona_name)
+    await process_query(ctx, question, prompt_str, use_thinking=False)
 
 @bot.command(name="think")
 @commands.guild_only()
 async def think(ctx, *, question: str):
-    """Ask Waddles a question using thinking mode."""
-    await process_query(ctx, question, custom_prompt_str, use_thinking=True)
+    """Ask Waddles a question using thinking mode and your default persona."""
+    persona_name = get_user_default_persona(ctx.author.id)
+    prompt_str = get_persona_prompt(persona_name)
+    await process_query(ctx, question, prompt_str, use_thinking=True)
 
 @bot.command(name="askas")
 @commands.guild_only()
 async def askas(ctx, name: str, *, question: str):
     """Ask a custom persona a question normally."""
-    persona_name = name.lower()
-    file_path = os.path.join(PERSONA_DIR, f"{persona_name}.json")
+    name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
+    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
     if not os.path.exists(file_path):
-        return await ctx.reply(f"❌ Persona `{persona_name}` not found. Check `?persona list`.")
+        return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -365,11 +390,13 @@ async def askas(ctx, name: str, *, question: str):
 @commands.guild_only()
 async def thinkas(ctx, name: str, *, question: str):
     """Ask a custom persona a question using thinking mode."""
-    persona_name = name.lower()
-    file_path = os.path.join(PERSONA_DIR, f"{persona_name}.json")
+    name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
+    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
     if not os.path.exists(file_path):
-        return await ctx.reply(f"❌ Persona `{persona_name}` not found. Check `?persona list`.")
+        return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -392,10 +419,46 @@ async def stop(ctx):
 # --- 7. PERSONA MANAGEMENT ---
 @bot.group(name="persona", invoke_without_command=True)
 @commands.guild_only()
-@commands.has_role(ADMIN_ROLE_ID)
 async def persona(ctx):
     """Manage custom bot personas."""
-    await ctx.reply("⚙️ **Persona Commands:**\n`?persona set <name> <prompt>`\n`?persona delete <name>`\n`?persona list`\n`?persona view <name>`")
+    await ctx.reply(
+        "⚙️ **Persona Commands:**\n"
+        "`?persona default <name>` (Set your default)\n"
+        "`?persona set <name> <prompt>`\n"
+        "`?persona delete <name>`\n"
+        "`?persona list`\n"
+        "`?persona view <name>`"
+    )
+
+@persona.command(name="default")
+@commands.guild_only()
+async def persona_default(ctx, name: str):
+    """Sets your default persona for ?ask and ?think."""
+    name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+
+    # Validate the persona actually exists
+    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
+    if not os.path.exists(file_path):
+        return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
+
+    settings_file = os.path.join(SETTINGS_DIR, f"{ctx.author.id}.json")
+    data = {}
+
+    if os.path.exists(settings_file):
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            pass
+
+    data["default_persona"] = name
+
+    with open(settings_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+    await ctx.reply(f"✅ Your default persona has been set to `{name}`!")
 
 @persona.command(name="set")
 @commands.guild_only()
@@ -403,6 +466,9 @@ async def persona(ctx):
 async def persona_set(ctx, name: str, *, prompt: str):
     """Creates or updates a persona."""
     name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+
     file_path = os.path.join(PERSONA_DIR, f"{name}.json")
 
     # Check permissions if overwriting
@@ -424,6 +490,9 @@ async def persona_set(ctx, name: str, *, prompt: str):
 async def persona_delete(ctx, name: str):
     """Deletes a persona."""
     name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+
     file_path = os.path.join(PERSONA_DIR, f"{name}.json")
 
     if not os.path.exists(file_path):
@@ -454,6 +523,9 @@ async def persona_list(ctx):
 async def persona_view(ctx, name: str):
     """Shows the prompt configuration for a given persona."""
     name = name.lower()
+    if not is_valid_persona_name(name):
+        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+
     file_path = os.path.join(PERSONA_DIR, f"{name}.json")
 
     if not os.path.exists(file_path):
