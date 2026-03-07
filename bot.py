@@ -62,6 +62,7 @@ def get_llm(thinking: bool):
         is_chat_model=True,
         is_function_calling_model=False,
         timeout=360.0,
+        temperature=0.1,
         additional_kwargs={
             "extra_body": {
                 "chat_template_kwargs": {"enable_thinking": thinking}
