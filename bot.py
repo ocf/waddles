@@ -23,7 +23,9 @@ from llama_index.llms.openai_like import OpenAILike
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.core import Document
 from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core.tools import FunctionTool
 from bs4 import BeautifulSoup
+from duckduckgo_search import AsyncDDGS
 
 # --- 1. ENV VARS ---
 TOKEN = os.getenv("DISCORD_TOKEN")
@@ -60,7 +62,7 @@ def get_llm(thinking: bool):
         api_key="fake-key",
         context_window=32768,
         is_chat_model=True,
-        is_function_calling_model=False,
+        is_function_calling_model=True,
         timeout=360.0,
         temperature=0.1,
         additional_kwargs={
@@ -266,23 +268,63 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
         try:
             query_str = f"[{ctx.author.name}] says: \n{question}"
 
-            # 1.5. Generate optimized search query
-            await msg.edit(content="🔍 Formulating search query...")
-            query_gen_prompt = (
-                "You are an AI assistant helping a user find information. "
-                "Convert the user's question into a concise, keyword-rich search query optimized for vector database retrieval.\n\n"
-                f"User Question: {question}\n\n"
-                "Return ONLY the search query text, without quotes or extra explanations:"
-            )
-            search_query_response = await llm_standard.acomplete(query_gen_prompt)
-            search_query = search_query_response.text.strip()
-            
-            await msg.edit(content=f"🔍 Searching docs for: `{search_query}`...")
+            # 1.5. Tools Definition
+            async def search_web(query: str) -> str:
+                """Useful to search the internet for recent news and facts not related to OCF."""
+                try:
+                    results = await AsyncDDGS().text(query, max_results=3)
+                    if not results: return "No web results found."
+                    return "\n\n".join([f"Source: {r['href']}\n{r['body']}" for r in results])
+                except Exception as e:
+                    return f"Web search error: {e}"
 
-            # 2. Retrieve the context nodes
-            retriever = bot.index.as_retriever(similarity_top_k=5)
-            nodes = await retriever.aretrieve(search_query)
-            context_str = "\n---------------------\n".join([n.get_content() for n in nodes])
+            async def search_docs(query: str) -> str:
+                """Useful to search internal OCF documentation about rules, services, and policies."""
+                retriever = bot.index.as_retriever(similarity_top_k=5)
+                nodes = await retriever.aretrieve(query)
+                if not nodes: return "No internal documentation found."
+                return "\n---------------------\n".join([n.get_content() for n in nodes])
+
+            web_tool = FunctionTool.from_defaults(async_fn=search_web)
+            docs_tool = FunctionTool.from_defaults(async_fn=search_docs)
+
+            # 2. Decide tool usage
+            await msg.edit(content="🔍 Deciding how to answer...")
+            tool_msg = (
+                "You must decide what information to search for. "
+                "Call 'search_web' for general internet facts and news. "
+                "Call 'search_docs' for internal OCF rules, services, or policies. "
+                "You may call multiple tools if needed. "
+                f"\n\nUser Question: {question}"
+            )
+            res = await llm_standard.achat_with_tools([web_tool, docs_tool], user_msg=tool_msg)
+            
+            tool_calls = res.message.additional_kwargs.get("tool_calls", [])
+            context_pieces = []
+            
+            if tool_calls:
+                for t in tool_calls:
+                    func_name = t.function.name
+                    import json
+                    args = json.loads(t.function.arguments)
+                    tool_query = args.get("query", question)
+                    
+                    if func_name == "search_web":
+                        await msg.edit(content=f"🔍 Searching Web for: `{tool_query}`...")
+                        res_text = await search_web(tool_query)
+                        context_pieces.append(f"--- WEB RESULTS FOR '{tool_query}' ---\n{res_text}")
+                        
+                    elif func_name == "search_docs":
+                        await msg.edit(content=f"🔍 Searching Docs for: `{tool_query}`...")
+                        res_text = await search_docs(tool_query)
+                        context_pieces.append(f"--- DOCS RESULTS FOR '{tool_query}' ---\n{res_text}")
+            else:
+                 # Fallback to docs if no tool called
+                 await msg.edit(content=f"🔍 Searching Docs for: `{question}`...")
+                 res_text = await search_docs(question)
+                 context_pieces.append(f"--- DOCS RESULTS FOR '{question}' ---\n{res_text}")
+            
+            context_str = "\n\n".join(context_pieces)
 
             # 3. Format the prompt
             formatted_prompt = prompt_template_str.format(
