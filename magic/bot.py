@@ -32,7 +32,7 @@ client = OpenAI(base_url=SGLANG_API_URL, api_key="local")
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-bot = commands.Bot(command_prefix='?', intents=intents, owner_ids=OWNER_IDS)
+bot = commands.Bot(command_prefix='?', intents=intents, owner_ids=OWNER_IDS, help_command=None)
 
 def run_cmd(cmd, cwd=REPO_PATH):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
