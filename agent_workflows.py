@@ -74,16 +74,7 @@ class OCFAgentWorkflow(Workflow):
     async def handle_query(
         self, ctx: Context, ev: StartEvent
     ) -> ToolDecisionEvent:
-        """Entry point: receive query and decide on tools to call.
-
-        Args:
-            ctx: The workflow context.
-            ev: The start event containing query parameters.
-
-        Returns:
-            ToolDecisionEvent with the decided tool calls.
-        """
-        # Extract parameters from StartEvent
+        """Entry point: receive query and decide on tools to call."""
         question = ev.get("question", "")
         user_name = ev.get("user_name", "User")
         persona_prompt = ev.get("persona_prompt", "")
@@ -91,7 +82,6 @@ class OCFAgentWorkflow(Workflow):
         self._message_callback = ev.get("message_callback")
         self._cancelled = False
 
-        # Update status
         if self._message_callback:
             await self._message_callback("🔍 Deciding how to answer...")
 
@@ -100,21 +90,25 @@ class OCFAgentWorkflow(Workflow):
             user_msg=get_tool_decision_prompt(question)
         )
 
-        # 1. Start with the fallback (Search Docs)
-        tool_calls = [{"name": "search_docs", "query": question}]
+        # 1. Start with the fallback (Search Docs), using kwargs format
+        tool_calls = []
 
         # 2. Check if Qwen 3.5 sent its special XML tags
         content = response.message.content
         if content and "<tool_call>" in content:
-            # Extract function name and the query parameter
             fn_name = re.search(r"<function=(\w+)>", content)
-            query_val = re.search(r"<parameter=query>(.*?)</parameter>", content, re.DOTALL)
 
-            if fn_name and query_val:
-                # Override the fallback with the actual web search
+            # UPDATED: Dynamically capture BOTH the parameter name and its value
+            param_match = re.search(r"<parameter=(\w+)>(.*?)</parameter>", content, re.DOTALL)
+
+            if fn_name and param_match:
+                param_name = param_match.group(1)
+                param_val = param_match.group(2).strip()
+
+                # Override the fallback with dynamic kwargs
                 tool_calls = [{
                     "name": fn_name.group(1),
-                    "query": query_val.group(1).strip()
+                    "kwargs": {param_name: param_val}
                 }]
 
         return ToolDecisionEvent(
@@ -134,12 +128,15 @@ class OCFAgentWorkflow(Workflow):
             if self._cancelled: break
 
             name = tool_call.get("name")
-            query = tool_call.get("query")
+            kwargs = tool_call.get("kwargs", {})
 
-            # Dynamic lookup: no hardcoded strings like "search_web" here!
             if name in self.tool_map:
-                labels.append(f"{name}: {query}")
-                tasks.append(self.tool_map[name].acall(query=query))
+                # Format a nice label using the dynamic kwargs
+                param_str = ", ".join([f"{v}" for k, v in kwargs.items()])
+                labels.append(f"{name}: {param_str}")
+
+                # UPDATED: Unpack the kwargs into acall
+                tasks.append(self.tool_map[name].acall(**kwargs))
             else:
                 print(f"Warning: LLM tried to call unknown tool {name}")
 
