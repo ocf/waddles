@@ -90,26 +90,31 @@ class OCFAgentWorkflow(Workflow):
             user_msg=get_tool_decision_prompt(question)
         )
 
-        # 1. Start with the fallback (Search Docs), using kwargs format
-        tool_calls = []
+        # 1. Start with the fallback (Search Docs)
+        tool_calls = [{"name": "search_docs", "kwargs": {"query": question}}]
 
         # 2. Check if Qwen 3.5 sent its special XML tags
         content = response.message.content
         if content and "<tool_call>" in content:
-            fn_name = re.search(r"<function=(\w+)>", content)
+            parsed_calls = []
 
-            # UPDATED: Dynamically capture BOTH the parameter name and its value
-            param_match = re.search(r"<parameter=(\w+)>(.*?)</parameter>", content, re.DOTALL)
+            # UPDATED: Use finditer to grab EVERY function and parameter pair
+            # This regex looks for <function=X> followed by <parameter=Y>Z</parameter>
+            matches = re.finditer(r"<function=(\w+)>\s*<parameter=(\w+)>(.*?)</parameter>", content, re.DOTALL)
 
-            if fn_name and param_match:
-                param_name = param_match.group(1)
-                param_val = param_match.group(2).strip()
+            for match in matches:
+                fn_name = match.group(1)
+                param_name = match.group(2)
+                param_val = match.group(3).strip()
 
-                # Override the fallback with dynamic kwargs
-                tool_calls = [{
-                    "name": fn_name.group(1),
+                parsed_calls.append({
+                    "name": fn_name,
                     "kwargs": {param_name: param_val}
-                }]
+                })
+
+            # If we successfully parsed any tool calls, override the fallback
+            if parsed_calls:
+                tool_calls = parsed_calls
 
         return ToolDecisionEvent(
             tool_calls=tool_calls,

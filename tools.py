@@ -160,7 +160,7 @@ def get_tool_decision_prompt(question: str) -> str:
         "Call 'search_web' for general internet facts, current events, and news. "
         "Call 'search_docs' for internal OCF rules, services, policies, or any OCF-related question. "
         "Call 'get_ocf_user_info' if the user asks for details or printing quotas for a specific OCF username. "
-        "You may call multiple tools if needed. "
+        "You should call as many tools as necessary to fully address the user's question. "
         "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first. "
         f"\n\nUser Question: {question}"
     )
