@@ -99,24 +99,27 @@ async def on_ready():
 @commands.guild_only()
 @commands.is_owner()
 async def explain(ctx, *, question: str):
-    await ctx.trigger_typing()
-    res = run_cmd(f"codex exec \"{question}\" --profile local")
+    async with ctx.typing():
+        res = run_cmd(f"codex exec \"{question}\" --profile local")
+
     content = res.stdout or "Codex found no answer."
     if len(content) > 2000:
         with io.BytesIO(content.encode()) as buf:
-            await ctx.send("📄 Explanation:", file=discord.File(fp=buf, filename="explanation.txt"))
+            await ctx.reply("📄 Explanation:", file=discord.File(fp=buf, filename="explanation.txt"))
     else:
-        await ctx.send(content)
+        await ctx.reply(content)
 
 @bot.command(name="change")
 @commands.guild_only()
 @commands.is_owner()
 async def change(ctx, *, prompt: str):
     await ctx.send("🔄 **Syncing and planning...**")
-    run_cmd("git pull --rebase")
 
-    # Run modification
-    run_cmd(f"codex \"{prompt}\" --profile local --yes")
+    async with ctx.typing():
+        run_cmd("git pull --rebase")
+
+        # Run modification
+        run_cmd(f"codex \"{prompt}\" --profile local --yes")
 
     diff = run_cmd("git diff").stdout
     if not diff.strip():
