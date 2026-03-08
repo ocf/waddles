@@ -189,6 +189,7 @@ async def on_ready():
 @bot.command(name="ping")
 @commands.guild_only()
 async def ping(ctx):
+    """Checks if the bot is online and measures latency."""
     start_time = time.time()
     message = await ctx.reply("Pinging...")
     end_time = time.time()
