@@ -9,4 +9,4 @@ llama-index-vector-stores-chroma
 beautifulsoup4
 chromadb
 ddgs
-ocflib
+git+https://github.com/ocf/ocflib.git
