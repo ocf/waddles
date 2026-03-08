@@ -95,33 +95,27 @@ class OCFAgentWorkflow(Workflow):
         if self._message_callback:
             await self._message_callback("🔍 Deciding how to answer...")
 
-        # Ask LLM to decide which tools to use
-        tool_decision_prompt = get_tool_decision_prompt(question)
-
         response = await self.llm_standard.achat_with_tools(
             self.tools,
-            user_msg=tool_decision_prompt
+            user_msg=get_tool_decision_prompt(question)
         )
 
-        # Extract tool calls from response
-        tool_calls_raw = response.message.additional_kwargs.get("tool_calls", [])
+        # 1. Start with the fallback (Search Docs)
+        tool_calls = [{"name": "search_docs", "query": question}]
 
-        tool_calls = []
-        for tc in tool_calls_raw:
-            func_name = tc.function.name
-            args = json.loads(tc.function.arguments)
-            tool_query = args.get("query", question)
-            tool_calls.append({
-                "name": func_name,
-                "query": tool_query
-            })
+        # 2. Check if Qwen 3.5 sent its special XML tags
+        content = response.message.content
+        if content and "<tool_call>" in content:
+            # Extract function name and the query parameter
+            fn_name = re.search(r"<function=(\w+)>", content)
+            query_val = re.search(r"<parameter=query>(.*?)</parameter>", content, re.DOTALL)
 
-        # Default to searching docs if no tools were called (safety fallback)
-        if not tool_calls:
-            tool_calls.append({
-                "name": "search_docs",
-                "query": question
-            })
+            if fn_name and query_val:
+                # Override the fallback with the actual web search
+                tool_calls = [{
+                    "name": fn_name.group(1),
+                    "query": query_val.group(1).strip()
+                }]
 
         return ToolDecisionEvent(
             tool_calls=tool_calls,
