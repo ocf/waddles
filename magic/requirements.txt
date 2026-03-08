@@ -1,2 +1,6 @@
 discord.py
 openai
+fastapi
+httpx
+uvicorn
+uuid
