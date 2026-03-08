@@ -11,6 +11,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot.py .
+COPY config.py .
+COPY events.py .
+COPY index_manager.py .
+COPY prompts.py .
+COPY tools.py .
+COPY workflows.py .
 COPY sync.sh .
 
 CMD ["python", "bot.py"]
