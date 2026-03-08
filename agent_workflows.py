@@ -145,8 +145,11 @@ class OCFAgentWorkflow(Workflow):
             status = "💭 Thinking..." if self._use_thinking else "✨ Generating response..."
             await self._message_callback(status)
 
-        # We use astream_chat to handle both thinking and regular content streaming
-        response_stream = await active_llm.astream_chat(self._chat_history)
+        # We use astream_chat_with_tools to ensure the LLM receives the tool definitions
+        response_stream = await active_llm.astream_chat_with_tools(
+            self.tools,
+            chat_history=self._chat_history
+        )
 
         thinking_text = ""
         full_content = ""
