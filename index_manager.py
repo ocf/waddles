@@ -22,6 +22,7 @@ from config import (
     LLM_REPETITION_PENALTY,
     SGLANG_URL,
     OLLAMA_URL,
+    MODEL_NAME,
     EMBEDDING_NAME,
     DOCS_DIR,
     STORAGE_DIR,
@@ -62,7 +63,7 @@ def get_llm(thinking: bool) -> OpenAILike:
         Configured OpenAILike LLM instance.
     """
     return OpenAILike(
-        model="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
+        model=MODEL_NAME,
         api_base=SGLANG_URL,
         api_key="fake-key",
         context_window=LLM_CONTEXT_WINDOW,

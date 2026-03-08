@@ -12,6 +12,14 @@ services:
       - bot_storage:/app/storage
       - bot_docs:/app/docs
 
+  magic:
+    image: ghcr.io/ocf/waddlesmagic:latest
+    container_name: waddles_magic
+    restart: unless-stopped
+    env_file:
+      - .magic.env
+    network_mode: host
+
   watchtower:
     image: containrrr/watchtower
     container_name: waddles_watchtower
@@ -22,7 +30,7 @@ services:
       - .watchtower.env
     ports:
       - "6767:8080"
-    command: waddles_bot
+    command: waddles_bot waddles_magic
 
 volumes:
   bot_cache:

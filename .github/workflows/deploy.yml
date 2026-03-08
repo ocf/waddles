@@ -26,12 +26,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # Step 1: Build the main Waddles image
+      - name: Build and push Waddles
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: ghcr.io/ocf/waddles:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Step 2: Build the Magic image from the subfolder
+      - name: Build and push Magic
+        uses: docker/build-push-action@v5
+        with:
+          context: ./magic  # This points to your magic folder
+          push: true
+          tags: ghcr.io/ocf/waddlesmagic:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
