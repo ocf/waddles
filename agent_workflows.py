@@ -24,7 +24,7 @@ from events import (
     StreamChunkEvent,
     ResponseCompleteEvent,
 )
-from tools import create_web_search_tool, create_docs_search_tool, get_tool_decision_prompt
+from tools import get_all_tools, get_tool_decision_prompt
 
 
 # Type alias for the message update callback
@@ -64,9 +64,7 @@ class OCFAgentWorkflow(Workflow):
         self.index = index
 
         # Create tools
-        self.web_tool = create_web_search_tool()
-        self.docs_tool = create_docs_search_tool(index)
-        self.tools = [self.web_tool, self.docs_tool]
+        self.tool_map = get_all_tools(index)
 
         # Per-run state (set when run() is called)
         self._message_callback: Optional[MessageCallback] = None
@@ -98,7 +96,7 @@ class OCFAgentWorkflow(Workflow):
             await self._message_callback("🔍 Deciding how to answer...")
 
         response = await self.llm_standard.achat_with_tools(
-            self.tools,
+            list(self.tool_map.values()),
             user_msg=get_tool_decision_prompt(question)
         )
 
@@ -128,49 +126,33 @@ class OCFAgentWorkflow(Workflow):
         )
 
     @step
-    async def execute_tools(
-        self, ctx: Context, ev: ToolDecisionEvent
-    ) -> ContextGatheredEvent:
-        """Execute decided tool calls in parallel and gather context."""
-
+    async def execute_tools(self, ctx: Context, ev: ToolDecisionEvent) -> ContextGatheredEvent:
         tasks = []
         labels = []
 
-        # 1. Prepare all tasks
         for tool_call in ev.tool_calls:
-            if self._cancelled:
-                break
+            if self._cancelled: break
 
-            func_name = tool_call["name"]
-            tool_query = tool_call["query"]
+            name = tool_call.get("name")
+            query = tool_call.get("query")
 
-            if func_name == "search_web":
-                labels.append(f"Web: {tool_query}")
-                tasks.append(self.web_tool.acall(query=tool_query))
-            elif func_name == "search_docs":
-                labels.append(f"Docs: {tool_query}")
-                tasks.append(self.docs_tool.acall(query=tool_query))
+            # Dynamic lookup: no hardcoded strings like "search_web" here!
+            if name in self.tool_map:
+                labels.append(f"{name}: {query}")
+                tasks.append(self.tool_map[name].acall(query=query))
+            else:
+                print(f"Warning: LLM tried to call unknown tool {name}")
 
-        # 2. Update status once to show all planned searches
         if self._message_callback and labels:
-            status_msg = "🔍 Searching: " + " & ".join([f"`{l}`" for l in labels])
-            await self._message_callback(status_msg)
+            await self._message_callback("🔍 Searching: " + " & ".join([f"`{l}`" for l in labels]))
 
-        # 3. Execute all tasks concurrently
-        # This is where the magic happens—it waits for the slowest one, not the sum of all.
         results = await asyncio.gather(*tasks)
 
-        # 4. Format the context pieces
-        context_pieces = []
-        for label, result in zip(labels, results):
-            context_pieces.append(f"--- {label.upper()} ---\n{result}")
-
-        context_str = "\n\n".join(context_pieces)
-        query_str = f"[{ev.user_name}] says: \n{ev.original_question}"
+        context_pieces = [f"--- {l.upper()} ---\n{r}" for l, r in zip(labels, results)]
 
         return ContextGatheredEvent(
-            context_str=context_str,
-            query_str=query_str,
+            context_str="\n\n".join(context_pieces),
+            query_str=f"[{ev.user_name}] says: \n{ev.original_question}",
             persona_prompt=ev.persona_prompt,
             use_thinking=ev.use_thinking,
         )

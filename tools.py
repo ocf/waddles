@@ -1,5 +1,6 @@
 """Function tools for the OCF Agent Workflow."""
 
+import asyncio
 from typing import TYPE_CHECKING
 from llama_index.core.tools import FunctionTool
 from duckduckgo_search import DDGS
@@ -9,27 +10,27 @@ if TYPE_CHECKING:
 
 
 def create_web_search_tool() -> FunctionTool:
-    """Create the web search tool using DuckDuckGo."""
+    """Web search tool updated for the post-v7 'Simplified' DDGS."""
+
+    def sync_ddgs_call(query: str):
+        """The actual blocking call."""
+        # Note: deedy5 added mandatory delays, so we keep max_results low
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=3))
 
     async def search_web(query: str) -> str:
-        """Search the web using duckduckgo_search v8.1.1 logic."""
         try:
-            # In v8.1.1, DDGS() works for both sync and async
-            # we use 'atext' for the asynchronous version
-            with DDGS() as ddgs:
-                # We await the asynchronous text search method
-                results = await ddgs.atext(query, max_results=3)
+            # Official workaround: offload the sync call to a worker thread
+            results = await asyncio.to_thread(sync_ddgs_call, query)
 
-                if not results:
-                    return "No web results found."
+            if not results:
+                return "No web results found."
 
-                formatted_results = [
-                    f"Source: {r['href']}\n{r['body']}"
-                    for r in results
-                ]
-                return "\n\n---\n\n".join(formatted_results)
+            formatted = [f"Source: {r['href']}\n{r['body']}" for r in results]
+            return "\n\n---\n\n".join(formatted)
+
         except Exception as e:
-            return f"Web search error: {e}"
+            return f"Web search snag (v7+): {e}"
 
     return FunctionTool.from_defaults(
         async_fn=search_web,
@@ -92,3 +93,11 @@ def get_tool_decision_prompt(question: str) -> str:
         "When in doubt, ALWAYS call 'search_docs' to check the internal documentation first. "
         f"\n\nUser Question: {question}"
     )
+
+
+def get_all_tools(index: "VectorStoreIndex") -> dict:
+    """Central registry of all tools available to the workflow."""
+    return {
+        "search_web": create_web_search_tool(),
+        "search_docs": create_docs_search_tool(index),
+    }
