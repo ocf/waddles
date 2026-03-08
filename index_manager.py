@@ -28,6 +28,8 @@ from config import (
     LLM_CONTEXT_WINDOW,
     LLM_TIMEOUT,
     LLM_TEMPERATURE,
+    LLM_FREQUENCY_PENALTY,
+    LLM_PRESENCE_PENALTY,
     EMBED_BATCH_SIZE,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
@@ -67,6 +69,8 @@ def get_llm(thinking: bool) -> OpenAILike:
         timeout=LLM_TIMEOUT,
         temperature=LLM_TEMPERATURE,
         additional_kwargs={
+            "frequency_penalty": LLM_FREQUENCY_PENALTY,
+            "presence_penalty": LLM_PRESENCE_PENALTY,
             "extra_body": {
                 "chat_template_kwargs": {"enable_thinking": thinking}
             }
