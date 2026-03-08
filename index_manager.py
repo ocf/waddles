@@ -36,7 +36,7 @@ from config import (
 
 class CleanHTMLReader(BaseReader):
     """A custom reader that strips out web code and only keeps readable text."""
-    
+
     def load_data(self, file_path, extra_info=None) -> List[Document]:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             soup = BeautifulSoup(f.read(), "html.parser")
@@ -50,10 +50,10 @@ class CleanHTMLReader(BaseReader):
 
 def get_llm(thinking: bool) -> OpenAILike:
     """Create an LLM instance with optional thinking mode.
-    
+
     Args:
         thinking: Whether to enable thinking mode.
-        
+
     Returns:
         Configured OpenAILike LLM instance.
     """
@@ -76,7 +76,7 @@ def get_llm(thinking: bool) -> OpenAILike:
 
 def setup_settings(llm: OpenAILike) -> None:
     """Configure global LlamaIndex settings.
-    
+
     Args:
         llm: The LLM to use as default.
     """
@@ -95,7 +95,7 @@ def setup_settings(llm: OpenAILike) -> None:
 
 def _clean_document_metadata(documents: list[Document]) -> None:
     """Remove date metadata from documents to ensure consistent hashing.
-    
+
     Args:
         documents: List of documents to clean.
     """
@@ -108,7 +108,7 @@ def _clean_document_metadata(documents: list[Document]) -> None:
 
 def _load_documents() -> list[Document]:
     """Load documents from the docs directory.
-    
+
     Returns:
         List of loaded documents.
     """
@@ -126,7 +126,7 @@ def _load_documents() -> list[Document]:
 
 def build_or_load_index() -> VectorStoreIndex:
     """Loads the index instantly from ChromaDB if it exists, otherwise builds it.
-    
+
     Returns:
         The VectorStoreIndex instance.
     """
@@ -163,11 +163,11 @@ def build_or_load_index() -> VectorStoreIndex:
 
 def update_existing_index(index: VectorStoreIndex, run_script: bool = True) -> int:
     """Pulls the latest files and only embeds documents that have changed.
-    
+
     Args:
         index: The existing index to update.
         run_script: Whether to run the sync script first.
-        
+
     Returns:
         Number of documents that were updated.
     """
@@ -185,5 +185,5 @@ def update_existing_index(index: VectorStoreIndex, run_script: bool = True) -> i
 
     if updated_count > 0:
         index.storage_context.persist(persist_dir=STORAGE_DIR)
-    
+
     return updated_count

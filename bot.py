@@ -42,7 +42,7 @@ from prompts import (
     delete_persona,
     list_personas,
 )
-from workflows import OCFAgentWorkflow, run_query_workflow
+from agent_workflows import OCFAgentWorkflow, run_query_workflow
 from events import ResponseCompleteEvent
 
 
@@ -59,7 +59,7 @@ setup_settings(llm_standard)
 # --- 2. DISCORD BOT SETUP ---
 class OCFBot(commands.Bot):
     """Discord bot with LlamaIndex Workflow integration."""
-    
+
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
@@ -111,7 +111,7 @@ async def process_query(
     use_thinking: bool
 ) -> None:
     """Process a query using the workflow system.
-    
+
     Args:
         ctx: The Discord command context.
         question: The user's question.
@@ -150,7 +150,7 @@ async def process_query(
                 index=bot.index,
                 timeout=300.0,
             )
-            
+
             # Store reference to workflow for cancellation
             bot.active_workflows[user_id][query_id] = workflow
 
@@ -162,13 +162,13 @@ async def process_query(
                 use_thinking=use_thinking,
                 message_callback=message_callback,
             )
-            
+
             # Handle the result
             if isinstance(result, ResponseCompleteEvent):
                 final_text = result.final_text
             else:
                 final_text = str(result) if result else "I couldn't generate a response."
-            
+
             await msg.edit(content=final_text[:2000])
 
         except Exception as e:

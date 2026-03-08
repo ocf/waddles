@@ -10,15 +10,15 @@ if TYPE_CHECKING:
 
 def create_web_search_tool() -> FunctionTool:
     """Create the web search tool using DuckDuckGo."""
-    
+
     async def search_web(query: str) -> str:
         """
         Search the internet for recent news and facts not related to OCF.
         Use this for general knowledge questions, current events, and external information.
-        
+
         Args:
             query: The search query to look up on the web.
-            
+
         Returns:
             Search results with sources and snippets.
         """
@@ -27,12 +27,12 @@ def create_web_search_tool() -> FunctionTool:
             if not results:
                 return "No web results found."
             return "\n\n".join([
-                f"Source: {r['href']}\n{r['body']}" 
+                f"Source: {r['href']}\n{r['body']}"
                 for r in results
             ])
         except Exception as e:
             return f"Web search error: {e}"
-    
+
     return FunctionTool.from_defaults(
         async_fn=search_web,
         name="search_web",
@@ -42,20 +42,20 @@ def create_web_search_tool() -> FunctionTool:
 
 def create_docs_search_tool(index: "VectorStoreIndex") -> FunctionTool:
     """Create the internal documentation search tool.
-    
+
     Args:
         index: The VectorStoreIndex containing OCF documentation.
     """
-    
+
     async def search_docs(query: str) -> str:
         """
         Search internal OCF documentation for rules, services, and policies.
         Use this for questions about OCF-specific information, lab policies,
         printing, computing resources, and other OCF services.
-        
+
         Args:
             query: The search query to look up in OCF documentation.
-            
+
         Returns:
             Relevant documentation passages.
         """
@@ -69,7 +69,7 @@ def create_docs_search_tool(index: "VectorStoreIndex") -> FunctionTool:
             ])
         except Exception as e:
             return f"Documentation search error: {e}"
-    
+
     return FunctionTool.from_defaults(
         async_fn=search_docs,
         name="search_docs",
@@ -79,10 +79,10 @@ def create_docs_search_tool(index: "VectorStoreIndex") -> FunctionTool:
 
 def get_tool_decision_prompt(question: str) -> str:
     """Generate the prompt for deciding which tools to use.
-    
+
     Args:
         question: The user's question.
-        
+
     Returns:
         The formatted prompt string for tool decision.
     """
