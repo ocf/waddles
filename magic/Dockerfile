@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Codex CLI globally
-RUN npm install -g @openai/codex-cli
+RUN npm install -g @openai/codex
 
 WORKDIR /app
 
