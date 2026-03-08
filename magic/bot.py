@@ -54,7 +54,7 @@ def clone_if_not_exists():
 def configure_opencode_json():
     """Writes the OpenCode configuration file."""
     opencode_dir = Path.home() / ".config/opencode"
-    opencode_dir.mkdir(exist_ok=True)
+    opencode_dir.mkdir(parents=True, exist_ok=True)
     config_path = opencode_dir / "opencode.json"
 
     # Strict OpenCode specific JSON configuration
