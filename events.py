@@ -12,6 +12,11 @@ class QueryReceivedEvent(Event):
     use_thinking: bool
 
 
+class AgentInputEvent(Event):
+    """Event to trigger the agent reasoning step with the current chat history."""
+    pass
+
+
 class ToolDecisionEvent(Event):
     """Event after deciding which tools to call."""
     tool_calls: List[Dict[str, Any]]
