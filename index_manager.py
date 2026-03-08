@@ -19,6 +19,7 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from config import (
+    LLM_REPETITION_PENALTY,
     SGLANG_URL,
     OLLAMA_URL,
     EMBEDDING_NAME,
@@ -30,6 +31,7 @@ from config import (
     LLM_TEMPERATURE,
     LLM_FREQUENCY_PENALTY,
     LLM_PRESENCE_PENALTY,
+    LLM_MIN_P,
     EMBED_BATCH_SIZE,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
@@ -69,10 +71,13 @@ def get_llm(thinking: bool) -> OpenAILike:
         timeout=LLM_TIMEOUT,
         temperature=LLM_TEMPERATURE,
         additional_kwargs={
+            "stop": ["<|im_end|>", "<|im_start|>", "\nUser:"],
             "frequency_penalty": LLM_FREQUENCY_PENALTY,
             "presence_penalty": LLM_PRESENCE_PENALTY,
             "extra_body": {
-                "chat_template_kwargs": {"enable_thinking": thinking}
+                "chat_template_kwargs": {"enable_thinking": thinking},
+                "repetition_penalty": LLM_REPETITION_PENALTY,
+                "min_p": LLM_MIN_P
             }
         }
     )
