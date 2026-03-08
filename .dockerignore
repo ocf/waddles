@@ -1,0 +1,8 @@
+# Ignore the other project's folder to keep the Waddles context clean
+magic/
+
+# Standard ignores to prevent cache busting from metadata
+.git
+.github
+*.md
+.gitignore

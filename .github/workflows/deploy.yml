@@ -33,8 +33,8 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/ocf/waddles:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=waddles
+          cache-to: type=gha,mode=max,scope=waddles
 
       # Step 2: Build the Magic image from the subfolder
       - name: Build and push Magic
@@ -43,8 +43,8 @@ jobs:
           context: ./magic  # This points to your magic folder
           push: true
           tags: ghcr.io/ocf/waddlesmagic:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=magic
+          cache-to: type=gha,mode=max,scope=magic
 
       - name: Trigger Watchtower Update
         run: |

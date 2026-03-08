@@ -7,7 +7,7 @@ cd ~/waddles
 virtualenv venv
 source venv/bin/activate
 pip install 'git+https://github.com/sgl-project/sglang.git#subdirectory=python&egg=sglang[all]'
-CUDA_VISIBLE_DEVICES=1,2 python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B-GPTQ-Int4 --port 30000 --tp-size 2 --mem-fraction-static 0.4 --context-length 32768 --reasoning-parser qwen3 --quantization moe_wna16
+CUDA_VISIBLE_DEVICES=1,2 python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B-GPTQ-Int4 --port 30000 --tp-size 2 --mem-fraction-static 0.4 --context-length 32768 --reasoning-parser qwen3 --tool-call-parser qwen3_coder --quantization moe_wna16
 ```
 
 ## Environment
@@ -23,7 +23,6 @@ OWNER_USERS=446290930723717120,1023113941624295434
 DISCORD_TOKEN=OTI3MzkyMDQ4MTI3Mzg0NTAx.YdI2Yw.b8G9f2R_jK3L5mN8Pq1RsTh1sI5pR0b4b1YfAk3uVwXyZ
 GITHUB_TOKEN=github_pat_OTI3MzkyMDQ4MTI3Mzg0NTAx_YdI2Yw_b8G9f2R_jK3L5mN8Pq1RsTh1sI5pR0b4b1YfAk3uVwXyZ
 OWNER_USERS=446290930723717120,1023113941624295434
-PYTHONUNBUFFERED=1
 ```
 
 .watchtower.env
