@@ -3,7 +3,7 @@
 import asyncio
 from typing import TYPE_CHECKING
 from llama_index.core.tools import FunctionTool
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 if TYPE_CHECKING:
     from llama_index.core import VectorStoreIndex

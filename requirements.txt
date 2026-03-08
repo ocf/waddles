@@ -8,4 +8,4 @@ llama-index-readers-file
 llama-index-vector-stores-chroma
 beautifulsoup4
 chromadb
-duckduckgo-search
+ddgs
