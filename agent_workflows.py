@@ -1,6 +1,8 @@
 """OCF Agent Workflow using LlamaIndex Workflow system."""
 
+import asyncio
 import json
+import re
 import time
 from typing import Optional, List, Callable, Awaitable, Any
 
@@ -129,20 +131,13 @@ class OCFAgentWorkflow(Workflow):
     async def execute_tools(
         self, ctx: Context, ev: ToolDecisionEvent
     ) -> ContextGatheredEvent:
-        """Execute the decided tool calls and gather context.
+        """Execute decided tool calls in parallel and gather context."""
 
-        Args:
-            ctx: The workflow context.
-            ev: The tool decision event.
+        tasks = []
+        labels = []
 
-        Returns:
-            ContextGatheredEvent with all gathered context.
-        """
-        context_pieces: List[str] = []
-
-        # Execute each tool call
+        # 1. Prepare all tasks
         for tool_call in ev.tool_calls:
-            # Check for cancellation
             if self._cancelled:
                 break
 
@@ -150,26 +145,26 @@ class OCFAgentWorkflow(Workflow):
             tool_query = tool_call["query"]
 
             if func_name == "search_web":
-                if self._message_callback:
-                    await self._message_callback(f"🔍 Searching Web for: `{tool_query}`...")
-
-                # Execute the web search
-                result = await self.web_tool.acall(query=tool_query)
-                context_pieces.append(
-                    f"--- WEB RESULTS FOR '{tool_query}' ---\n{result}"
-                )
-
+                labels.append(f"Web: {tool_query}")
+                tasks.append(self.web_tool.acall(query=tool_query))
             elif func_name == "search_docs":
-                if self._message_callback:
-                    await self._message_callback(f"🔍 Searching Docs for: `{tool_query}`...")
+                labels.append(f"Docs: {tool_query}")
+                tasks.append(self.docs_tool.acall(query=tool_query))
 
-                # Execute the docs search
-                result = await self.docs_tool.acall(query=tool_query)
-                context_pieces.append(
-                    f"--- DOCS RESULTS FOR '{tool_query}' ---\n{result}"
-                )
+        # 2. Update status once to show all planned searches
+        if self._message_callback and labels:
+            status_msg = "🔍 Searching: " + " & ".join([f"`{l}`" for l in labels])
+            await self._message_callback(status_msg)
 
-        # Combine all context
+        # 3. Execute all tasks concurrently
+        # This is where the magic happens—it waits for the slowest one, not the sum of all.
+        results = await asyncio.gather(*tasks)
+
+        # 4. Format the context pieces
+        context_pieces = []
+        for label, result in zip(labels, results):
+            context_pieces.append(f"--- {label.upper()} ---\n{result}")
+
         context_str = "\n\n".join(context_pieces)
         query_str = f"[{ev.user_name}] says: \n{ev.original_question}"
 

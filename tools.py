@@ -12,24 +12,22 @@ def create_web_search_tool() -> FunctionTool:
     """Create the web search tool using DuckDuckGo."""
 
     async def search_web(query: str) -> str:
-        """
-        Search the internet for recent news and facts not related to OCF.
-        Use this for general knowledge questions, current events, and external information.
-
-        Args:
-            query: The search query to look up on the web.
-
-        Returns:
-            Search results with sources and snippets.
-        """
+        """Search the web using duckduckgo_search v8.1.1 logic."""
         try:
-            results = list(DDGS().text(query, max_results=3))
-            if not results:
-                return "No web results found."
-            return "\n\n".join([
-                f"Source: {r['href']}\n{r['body']}"
-                for r in results
-            ])
+            # In v8.1.1, DDGS() works for both sync and async
+            # we use 'atext' for the asynchronous version
+            with DDGS() as ddgs:
+                # We await the asynchronous text search method
+                results = await ddgs.atext(query, max_results=3)
+
+                if not results:
+                    return "No web results found."
+
+                formatted_results = [
+                    f"Source: {r['href']}\n{r['body']}"
+                    for r in results
+                ]
+                return "\n\n---\n\n".join(formatted_results)
         except Exception as e:
             return f"Web search error: {e}"
 
