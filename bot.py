@@ -1,255 +1,123 @@
+"""OCF Discord Bot - Waddles
+
+A RAG-powered Discord bot using LlamaIndex Workflows for function calling.
+"""
+
 import io
 import os
-import re
 import time
-import json
 import asyncio
 import textwrap
 import traceback
-import subprocess
-import chromadb
-import discord
 from contextlib import redirect_stdout
+from typing import Dict, Any
+
+import discord
 from discord.ext import commands, tasks
-from llama_index.core import (
-    VectorStoreIndex,
-    SimpleDirectoryReader,
-    Settings,
-    PromptTemplate,
-    StorageContext,
-    load_index_from_storage
+
+# Local imports
+from config import (
+    TOKEN,
+    PREFIX,
+    OWNER_IDS,
+    ADMIN_ROLE_ID,
+    DOCS_DIR,
+    SGLANG_URL,
 )
-from llama_index.llms.openai_like import OpenAILike
-from llama_index.embeddings.ollama import OllamaEmbedding
-from llama_index.core import Document
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.tools import FunctionTool
-from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from index_manager import (
+    get_llm,
+    setup_settings,
+    build_or_load_index,
+    update_existing_index,
+)
+from prompts import (
+    is_valid_persona_name,
+    get_user_default_persona,
+    set_user_default_persona,
+    get_persona_prompt,
+    format_persona_prompt,
+    persona_exists,
+    get_persona_data,
+    save_persona,
+    delete_persona,
+    list_personas,
+)
+from workflows import OCFAgentWorkflow, run_query_workflow
+from events import ResponseCompleteEvent
 
-# --- 1. ENV VARS ---
-TOKEN = os.getenv("DISCORD_TOKEN")
-OLLAMA_URL = "http://127.0.0.1:11434"
-SGLANG_URL = "http://127.0.0.1:30000/v1"
-MODEL_NAME = "qwen3.5:35b"
-EMBEDDING_NAME = "qwen3-embedding:8b"
 
-DOCS_DIR = "/app/docs"
-STORAGE_DIR = "/app/storage"
-DATA_DIR = "/app/data"
-PERSONA_DIR = f"{DATA_DIR}/persona"
-SETTINGS_DIR = f"{DATA_DIR}/settings"
-SYNC_SCRIPT = "/app/sync.sh"
-PREFIX = "?"
-
-OWNER_USERS_STR = os.getenv("OWNER_USERS", "")
-OWNER_IDS = {int(x.strip()) for x in OWNER_USERS_STR.split(",") if x.strip().isdigit()}
-
-# Provide a fallback just in case it's missing in .env
-ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", "735620451295821906"))
-
-# Ensure directories exist
-os.makedirs(PERSONA_DIR, exist_ok=True)
-os.makedirs(SETTINGS_DIR, exist_ok=True)
-
-# --- 2. SETUP LLAMAINDEX ---
+# --- 1. SETUP LLAMAINDEX ---
 print(f"Connecting to SGLang at {SGLANG_URL}...")
-
-def get_llm(thinking: bool):
-    return OpenAILike(
-        model="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
-        api_base=SGLANG_URL,
-        api_key="fake-key",
-        context_window=32768,
-        is_chat_model=True,
-        is_function_calling_model=True,
-        timeout=360.0,
-        temperature=0.1,
-        additional_kwargs={
-            "extra_body": {
-                "chat_template_kwargs": {"enable_thinking": thinking}
-            }
-        }
-    )
 
 llm_standard = get_llm(thinking=False)
 llm_thinking = get_llm(thinking=True)
 
-# Default to standard
-Settings.llm = llm_standard
-Settings.embed_model = OllamaEmbedding(
-    model_name=EMBEDDING_NAME,
-    base_url=OLLAMA_URL,
-    keep_alive=-1,
-    query_instruction="Instruct: Given a Discord user's question, retrieve relevant OCF documentation passages that answer the query\nQuery: ",
-    text_instruction="",
-)
-Settings.embed_batch_size = 128
-Settings.chunk_size = 1024
-Settings.chunk_overlap = 100
+# Configure global settings
+setup_settings(llm_standard)
 
-class CleanHTMLReader:
-    """A custom reader that strips out web code and only keeps readable text."""
-    def load_data(self, file_path, extra_info=None):
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            soup = BeautifulSoup(f.read(), "html.parser")
 
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            tag.extract()
-
-        text = soup.get_text(separator="\n", strip=True)
-        return [Document(text=text, extra_info=extra_info or {})]
-
-def build_or_load_index():
-    """Loads the index instantly from ChromaDB if it exists, otherwise builds it."""
-    db = chromadb.PersistentClient(path=STORAGE_DIR)
-    chroma_collection = db.get_or_create_collection("ocf_docs")
-
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-
-    if chroma_collection.count() > 0:
-        print(f"📂 Connected to existing ChromaDB at {STORAGE_DIR} (Instant startup!)...")
-        storage_context = StorageContext.from_defaults(
-            vector_store=vector_store,
-            persist_dir=STORAGE_DIR
-        )
-        return load_index_from_storage(storage_context)
-
-    print("⚠️ No existing Chroma database found. Building from scratch...")
-    print("🚀 Running sync script to fetch documents...")
-    subprocess.run(["bash", SYNC_SCRIPT], check=True)
-
-    print(f"Reading files from: {DOCS_DIR}")
-    reader = SimpleDirectoryReader(
-        DOCS_DIR,
-        recursive=True,
-        required_exts=[".md", ".html", ".txt"],
-        file_extractor={".html": CleanHTMLReader()},
-        filename_as_id=True,
-    )
-    documents = reader.load_data(show_progress=True)
-
-    for doc in documents:
-        doc.metadata.pop("last_modified_date", None)
-        doc.metadata.pop("creation_date", None)
-        doc.metadata.pop("last_accessed_date", None)
-        doc.metadata.pop("file_size", None)
-
-    print(f"🧠 Indexing {len(documents)} documents...")
-    index = VectorStoreIndex.from_documents(
-        documents,
-        storage_context=storage_context,
-        show_progress=True
-    )
-    index.storage_context.persist(persist_dir=STORAGE_DIR)
-    return index
-
-def update_existing_index(index, run_script=True):
-    """Pulls the latest files and only embeds documents that have changed."""
-    if run_script:
-        print("🚀 Running sync script to fetch latest documents...")
-        subprocess.run(["bash", SYNC_SCRIPT], check=True)
-
-    reader = SimpleDirectoryReader(
-        DOCS_DIR,
-        recursive=True,
-        required_exts=[".md", ".html", ".txt"],
-        file_extractor={".html": CleanHTMLReader()},
-        filename_as_id=True,
-    )
-    documents = reader.load_data(show_progress=True)
-
-    for doc in documents:
-        doc.metadata.pop("last_modified_date", None)
-        doc.metadata.pop("creation_date", None)
-        doc.metadata.pop("last_accessed_date", None)
-        doc.metadata.pop("file_size", None)
-
-    print(f"🔄 Smart-updating index. Skipping unchanged files...")
-    refreshed_docs = index.refresh_ref_docs(documents, show_progress=True)
-
-    updated_count = sum(refreshed_docs)
-    print(f"✅ Embedded {updated_count} new/modified documents. Skipped {len(documents) - updated_count} unchanged documents.")
-
-    if updated_count > 0:
-        index.storage_context.persist(persist_dir=STORAGE_DIR)
-
-# --- 3. PROMPTS & UTILS ---
-def is_valid_persona_name(name: str) -> bool:
-    """Ensures persona names are strictly lowercase alphanumeric."""
-    return bool(re.match(r"^[a-z0-9]+$", name))
-
-def format_persona_prompt(base_prompt: str) -> str:
-    """Ensures a persona prompt has the required template variables."""
-    if "{context_str}" not in base_prompt and "{query_str}" not in base_prompt:
-        return f"{base_prompt}\n\nContext:\n---------\n{{context_str}}\n---------\nQuery: {{query_str}}\nAnswer: "
-    return base_prompt
-
-def get_user_default_persona(user_id: int) -> str:
-    """Fetches the user's default persona name, defaults to 'default'."""
-    settings_file = os.path.join(SETTINGS_DIR, f"{user_id}.json")
-    if os.path.exists(settings_file):
-        try:
-            with open(settings_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data.get("default_persona", "default")
-        except Exception:
-            pass
-    return "default"
-
-def get_persona_prompt(persona_name: str) -> str:
-    """Loads the prompt for a given persona directly from its JSON file."""
-    file_path = os.path.join(PERSONA_DIR, f"{persona_name}.json")
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return format_persona_prompt(data["prompt"])
-        except Exception:
-            pass
-
-    # Bare minimum fallback just in case the default.json is deleted or corrupted
-    return "Context:\n---------\n{context_str}\n---------\nQuery: {query_str}\nAnswer: "
-
-# --- 4. DISCORD BOT SETUP ---
+# --- 2. DISCORD BOT SETUP ---
 class OCFBot(commands.Bot):
+    """Discord bot with LlamaIndex Workflow integration."""
+    
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix=PREFIX, intents=intents, owner_ids=OWNER_IDS)
-        self.index = None
-        self.query_engine = None
-        self.active_queries = {}
+        self.index: Any = None
+        self.workflow: Any = None
+        # Track active workflow contexts for cancellation: {user_id: {query_id: Context}}
+        self.active_workflows: Dict[int, Dict[int, Any]] = {}
+        # For eval command
+        self._last_result: Any = None
 
     async def setup_hook(self):
+        """Initialize the index and workflow on bot startup."""
         self.index = await asyncio.to_thread(build_or_load_index)
-        self.setup_query_engine()
+        self._setup_workflow()
         self.update_docs_loop.start()
 
-    def setup_query_engine(self):
-        self.query_engine = self.index.as_query_engine(
-            similarity_top_k=5,
-            response_mode="compact",
+    def _setup_workflow(self):
+        """Create the agent workflow with current index."""
+        self.workflow = OCFAgentWorkflow(
+            llm_standard=llm_standard,
+            llm_thinking=llm_thinking,
+            index=self.index,
+            timeout=300.0,
         )
 
     @tasks.loop(hours=1.0)
     async def update_docs_loop(self):
+        """Hourly task to update the document index."""
         if self.update_docs_loop.current_loop == 0:
             return
         print("⏰ Running scheduled hourly docs update...")
         try:
             await asyncio.to_thread(update_existing_index, self.index)
-            self.setup_query_engine()
+            self._setup_workflow()  # Refresh workflow with updated index
             print("✅ Hourly smart-update complete.")
         except Exception as e:
             print(f"❌ Failed to update index: {e}")
 
+
 bot = OCFBot()
 
-# --- 5. CORE QUERY ENGINE ---
-async def process_query(ctx, question: str, prompt_template_str: str, use_thinking: bool):
-    """Centralized function to handle RAG retrieval and streaming responses."""
+
+# --- 3. CORE QUERY PROCESSING ---
+async def process_query(
+    ctx: commands.Context,
+    question: str,
+    prompt_template_str: str,
+    use_thinking: bool
+) -> None:
+    """Process a query using the workflow system.
+    
+    Args:
+        ctx: The Discord command context.
+        question: The user's question.
+        prompt_template_str: The persona prompt template.
+        use_thinking: Whether to use thinking mode.
+    """
     if not bot.index:
         await ctx.reply("I'm still warming up my brain, try again in a sec!")
         return
@@ -257,140 +125,63 @@ async def process_query(ctx, question: str, prompt_template_str: str, use_thinki
     user_id = ctx.author.id
     query_id = ctx.message.id
 
-    # 1. Register this specific query as active
-    if user_id not in bot.active_queries:
-        bot.active_queries[user_id] = set()
-    bot.active_queries[user_id].add(query_id)
+    # Register this query as active
+    if user_id not in bot.active_workflows:
+        bot.active_workflows[user_id] = {}
 
     msg = await ctx.reply("💭 Thinking deeply..." if use_thinking else "Processing...")
 
+    # Create a message callback for status updates
+    async def message_callback(text: str) -> None:
+        try:
+            await msg.edit(content=text[:2000])
+        except discord.HTTPException:
+            pass  # Ignore rate limits and other HTTP errors
+
+    # Create workflow context for this specific query
+    workflow_ctx = None
+
     async with ctx.typing():
         try:
-            query_str = f"[{ctx.author.name}] says: \n{question}"
-
-            # 1.5. Tools Definition
-            async def search_web(query: str) -> str:
-                """Useful to search the internet for recent news and facts not related to OCF."""
-                try:
-                    results = list(DDGS().text(query, max_results=3))
-                    if not results: return "No web results found."
-                    return "\n\n".join([f"Source: {r['href']}\n{r['body']}" for r in results])
-                except Exception as e:
-                    return f"Web search error: {e}"
-
-            async def search_docs(query: str) -> str:
-                """Useful to search internal OCF documentation about rules, services, and policies."""
-                retriever = bot.index.as_retriever(similarity_top_k=5)
-                nodes = await retriever.aretrieve(query)
-                if not nodes: return "No internal documentation found."
-                return "\n---------------------\n".join([n.get_content() for n in nodes])
-
-            web_tool = FunctionTool.from_defaults(async_fn=search_web)
-            docs_tool = FunctionTool.from_defaults(async_fn=search_docs)
-
-            # 2. Decide tool usage
-            await msg.edit(content="🔍 Deciding how to answer...")
-            tool_msg = (
-                "You must decide what information to search for. "
-                "Call 'search_web' for general internet facts and news. "
-                "Call 'search_docs' for internal OCF rules, services, or policies. "
-                "You may call multiple tools if needed. "
-                f"\n\nUser Question: {question}"
+            # Create a fresh workflow instance for this query
+            workflow = OCFAgentWorkflow(
+                llm_standard=llm_standard,
+                llm_thinking=llm_thinking,
+                index=bot.index,
+                timeout=300.0,
             )
-            res = await llm_standard.achat_with_tools([web_tool, docs_tool], user_msg=tool_msg)
             
-            tool_calls = res.message.additional_kwargs.get("tool_calls", [])
-            context_pieces = []
+            # Store reference to workflow for cancellation
+            bot.active_workflows[user_id][query_id] = workflow
+
+            # Run the workflow
+            result = await workflow.run(
+                question=question,
+                user_name=ctx.author.name,
+                persona_prompt=prompt_template_str,
+                use_thinking=use_thinking,
+                message_callback=message_callback,
+            )
             
-            if tool_calls:
-                for t in tool_calls:
-                    func_name = t.function.name
-                    import json
-                    args = json.loads(t.function.arguments)
-                    tool_query = args.get("query", question)
-                    
-                    if func_name == "search_web":
-                        await msg.edit(content=f"🔍 Searching Web for: `{tool_query}`...")
-                        res_text = await search_web(tool_query)
-                        context_pieces.append(f"--- WEB RESULTS FOR '{tool_query}' ---\n{res_text}")
-                        
-                    elif func_name == "search_docs":
-                        await msg.edit(content=f"🔍 Searching Docs for: `{tool_query}`...")
-                        res_text = await search_docs(tool_query)
-                        context_pieces.append(f"--- DOCS RESULTS FOR '{tool_query}' ---\n{res_text}")
+            # Handle the result
+            if isinstance(result, ResponseCompleteEvent):
+                final_text = result.final_text
             else:
-                await msg.edit(content=f"🔍 No tool called.")
+                final_text = str(result) if result else "I couldn't generate a response."
             
-            context_str = "\n\n".join(context_pieces)
-
-            # 3. Format the prompt
-            formatted_prompt = prompt_template_str.format(
-                context_str=context_str,
-                query_str=query_str
-            )
-
-            # 4. Select Model & Stream
-            active_llm = llm_thinking if use_thinking else llm_standard
-            response_stream = await active_llm.astream_complete(formatted_prompt)
-
-            thinking_text = ""
-            answer_text = ""
-            display_text = ""
-            last_edit_time = time.time()
-
-            async for chunk in response_stream:
-                # --- 5. CHECK IF THIS QUERY WAS STOPPED ---
-                if query_id not in bot.active_queries.get(user_id, set()):
-                    stop_msg = "\n\n*[Stopped by user]*"
-
-                    # Formatting: If we only have thoughts so far, keep them visible.
-                    if thinking_text and not answer_text:
-                        truncated_thoughts = thinking_text if len(thinking_text) <= 1850 else "..." + thinking_text[-1850:]
-                        display_text = f"💭 **Thinking...**\n```text\n{truncated_thoughts}\n```{stop_msg}"
-                    else:
-                        answer_text += stop_msg
-                        display_text = answer_text
-
-                    # Force the HTTP disconnect to free the GPU
-                    if hasattr(response_stream, "aclose"):
-                        await response_stream.aclose()
-                    elif hasattr(response_stream, "close"):
-                        response_stream.close()
-                    break
-
-                # --- 6. NORMAL CHUNK PROCESSING ---
-                think_delta = chunk.additional_kwargs.get("thinking_delta", "")
-
-                if think_delta:
-                    thinking_text += think_delta
-                    truncated_thoughts = thinking_text if len(thinking_text) <= 1850 else "..." + thinking_text[-1850:]
-                    display_text = f"💭 **Thinking...**\n```text\n{truncated_thoughts}\n```"
-                elif chunk.delta:
-                    answer_text += chunk.delta
-                    display_text = answer_text
-
-                # Update Discord message every ~1.2 seconds to avoid ratelimits
-                current_time = time.time()
-                if current_time - last_edit_time > 1.2:
-                    if display_text:
-                        await msg.edit(content=display_text[:2000])
-                    last_edit_time = current_time
-
-            # Final edit to ensure the last chunk (or the stop message) is sent
-            final_content = display_text if display_text else "I couldn't think of anything to say."
-            await msg.edit(content=final_content[:2000])
+            await msg.edit(content=final_text[:2000])
 
         except Exception as e:
             await msg.edit(content=f"My circuits fried trying to answer that: {e}")
         finally:
-            # 7. CLEANUP: Safely remove ONLY this specific query
-            if user_id in bot.active_queries:
-                bot.active_queries[user_id].discard(query_id)
-                # If the set is empty, clean up the dictionary key to save memory
-                if not bot.active_queries[user_id]:
-                    del bot.active_queries[user_id]
+            # Cleanup: Remove this query from active workflows
+            if user_id in bot.active_workflows:
+                bot.active_workflows[user_id].pop(query_id, None)
+                if not bot.active_workflows[user_id]:
+                    del bot.active_workflows[user_id]
 
-# --- 6. COMMANDS ---
+
+# --- 4. COMMANDS ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} - ready to answer OCF questions!")
@@ -429,14 +220,10 @@ async def askas(ctx, name: str, *, question: str):
     if not is_valid_persona_name(name):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-    if not os.path.exists(file_path):
+    if not persona_exists(name):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    prompt = format_persona_prompt(data["prompt"])
+    prompt = get_persona_prompt(name)
     await process_query(ctx, question, prompt, use_thinking=False)
 
 @bot.command(name="thinkas")
@@ -447,14 +234,10 @@ async def thinkas(ctx, name: str, *, question: str):
     if not is_valid_persona_name(name):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-    if not os.path.exists(file_path):
+    if not persona_exists(name):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    prompt = format_persona_prompt(data["prompt"])
+    prompt = get_persona_prompt(name)
     await process_query(ctx, question, prompt, use_thinking=True)
 
 @bot.command(name="stop")
@@ -463,8 +246,11 @@ async def stop(ctx):
     """Stops all of your ongoing response generations."""
     user_id = ctx.author.id
 
-    if user_id in bot.active_queries and bot.active_queries[user_id]:
-        bot.active_queries[user_id].clear()
+    if user_id in bot.active_workflows and bot.active_workflows[user_id]:
+        # Request cancellation for all active workflows
+        for workflow in bot.active_workflows[user_id].values():
+            workflow.cancel()  # Set the cancelled flag
+        bot.active_workflows[user_id].clear()
         await ctx.reply("🛑 Stopping all your active generations...")
     else:
         await ctx.reply("You don't have any active queries to stop.")
@@ -492,25 +278,10 @@ async def persona_default(ctx, name: str):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
     # Validate the persona actually exists
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-    if not os.path.exists(file_path):
+    if not persona_exists(name):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
-    settings_file = os.path.join(SETTINGS_DIR, f"{ctx.author.id}.json")
-    data = {}
-
-    if os.path.exists(settings_file):
-        try:
-            with open(settings_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            pass
-
-    data["default_persona"] = name
-
-    with open(settings_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
+    set_user_default_persona(ctx.author.id, name)
     await ctx.reply(f"✅ Your default persona has been set to `{name}`!")
 
 @persona.command(name="set")
@@ -522,19 +293,13 @@ async def persona_set(ctx, name: str, *, prompt: str):
     if not is_valid_persona_name(name):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-
     # Check permissions if overwriting
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if ctx.author.id != data.get("creator_id") and ctx.author.id not in OWNER_IDS:
+    existing_data = get_persona_data(name)
+    if existing_data:
+        if ctx.author.id != existing_data.get("creator_id") and ctx.author.id not in OWNER_IDS:
             return await ctx.reply("❌ You didn't create this persona and you aren't an owner. You cannot overwrite it.")
 
-    data = {"creator_id": ctx.author.id, "prompt": prompt}
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
-
+    save_persona(name, ctx.author.id, prompt)
     await ctx.reply(f"✅ Persona `{name}` saved! Test it with `?askas {name} hi`.")
 
 @persona.command(name="delete")
@@ -546,18 +311,14 @@ async def persona_delete(ctx, name: str):
     if not is_valid_persona_name(name):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-
-    if not os.path.exists(file_path):
+    existing_data = get_persona_data(name)
+    if not existing_data:
         return await ctx.reply(f"❌ Persona `{name}` not found.")
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    if ctx.author.id != data.get("creator_id") and ctx.author.id not in OWNER_IDS:
+    if ctx.author.id != existing_data.get("creator_id") and ctx.author.id not in OWNER_IDS:
         return await ctx.reply("❌ You didn't create this persona and you aren't an owner. You cannot delete it.")
 
-    os.remove(file_path)
+    delete_persona(name)
     await ctx.reply(f"🗑️ Persona `{name}` has been deleted.")
 
 @persona.command(name="list")
@@ -565,7 +326,7 @@ async def persona_delete(ctx, name: str):
 @commands.has_role(ADMIN_ROLE_ID)
 async def persona_list(ctx):
     """Lists all available personas."""
-    files = [f[:-5] for f in os.listdir(PERSONA_DIR) if f.endswith(".json")]
+    files = list_personas()
     if not files:
         return await ctx.reply("No custom personas exist yet.")
     await ctx.reply(f"👥 **Available Personas:**\n" + "\n".join([f"- `{f}`" for f in files]))
@@ -579,13 +340,9 @@ async def persona_view(ctx, name: str):
     if not is_valid_persona_name(name):
         return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
 
-    file_path = os.path.join(PERSONA_DIR, f"{name}.json")
-
-    if not os.path.exists(file_path):
+    data = get_persona_data(name)
+    if not data:
         return await ctx.reply(f"❌ Persona `{name}` not found.")
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
 
     prompt_text = data.get('prompt', 'No prompt found.')
     creator = f"<@{data.get('creator_id')}>" if data.get('creator_id') else "Unknown"
@@ -612,7 +369,7 @@ async def reload(ctx):
     msg = await ctx.reply("🔄 Checking for changed documents and updating the index...")
     try:
         await asyncio.to_thread(update_existing_index, bot.index, False)
-        bot.setup_query_engine()
+        bot._setup_workflow()
         await msg.edit(content="✅ Successfully smartly updated the index!")
     except Exception as e:
         await msg.edit(content=f"❌ Failed to update: {e}")
@@ -624,7 +381,7 @@ async def reloadfull(ctx):
     msg = await ctx.reply("🔄 Checking for changed documents and updating the index...")
     try:
         await asyncio.to_thread(update_existing_index, bot.index)
-        bot.setup_query_engine()
+        bot._setup_workflow()
         await msg.edit(content="✅ Successfully synced and smartly updated the index!")
     except Exception as e:
         await msg.edit(content=f"❌ Failed to sync or update: {e}")
@@ -642,7 +399,7 @@ async def _eval(ctx, *, body: str):
         'author': ctx.author,
         'guild': ctx.guild,
         'message': ctx.message,
-        '_': bot._last_result if hasattr(bot, '_last_result') else None
+        '_': bot._last_result
     }
 
     # Clean up the input (remove code blocks if present)
@@ -732,4 +489,4 @@ async def shell(ctx, *, command: str):
     except Exception as e:
         await msg.edit(content=f"❌ Error: `{e}`")
 
-bot.run(TOKEN)
+bot.run(TOKEN or "")
