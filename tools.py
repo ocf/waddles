@@ -21,7 +21,7 @@ def create_web_search_tool() -> FunctionTool:
         """The actual blocking call."""
         # Note: deedy5 added mandatory delays, so we keep max_results low
         with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=3))
+            return list(ddgs.text(query, max_results=5))
 
     async def search_web(query: str) -> str:
         try:
