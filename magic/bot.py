@@ -1,11 +1,11 @@
 import discord
 from discord.ext import commands
-from openai import OpenAI
-import subprocess
+from openai import AsyncOpenAI
+import asyncio
 import io
 import os
-import asyncio
 import json
+import types
 from pathlib import Path
 
 # --- STARTUP CONFIGURATION ---
@@ -27,37 +27,61 @@ MODEL_NAME = "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
 GIT_USER = "ocfbot"
 GIT_EMAIL = "ocfbot@ocf.berkeley.edu"
 
-# Initialize Client directly to SGLang for basic completions (like commit messages)
-client = OpenAI(base_url=SGLANG_API_URL, api_key="local")
+# Initialize Async Client directly to SGLang for basic completions
+client = AsyncOpenAI(base_url=SGLANG_API_URL, api_key="local")
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 bot = commands.Bot(command_prefix='!', intents=intents, owner_ids=OWNER_IDS, help_command=None)
 
-def run_cmd(cmd, cwd=REPO_PATH):
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
+# --- ASYNC SHELL HELPER ---
+async def run_cmd(cmd, cwd=REPO_PATH):
+    """Runs shell commands asynchronously without blocking the Discord event loop."""
+    process = await asyncio.create_subprocess_shell(
+        cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd
+    )
+    stdout, stderr = await process.communicate()
+    
+    # Return a namespace mimicking subprocess.CompletedProcess
+    return types.SimpleNamespace(
+        stdout=stdout.decode('utf-8', errors='replace'),
+        stderr=stderr.decode('utf-8', errors='replace'),
+        returncode=process.returncode
+    )
 
-def clone_if_not_exists():
+# --- SETUP FUNCTIONS ---
+async def clone_if_not_exists():
     """Clones the repository if the target folder is empty or doesn't exist."""
     path = Path(REPO_PATH)
     if not path.exists() or not any(path.iterdir()):
         print(f"🚚 Repo not found at {REPO_PATH}. Cloning now...")
         auth_url = f"https://{GITHUB_TOKEN}@{REPO_URL}"
-        result = subprocess.run(f"git clone {auth_url} {REPO_PATH}", shell=True, capture_output=True, text=True)
-        if result.returncode == 0:
+        
+        # Temporarily run clone from parent directory
+        process = await asyncio.create_subprocess_shell(
+            f"git clone {auth_url} {REPO_PATH}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        _, stderr = await process.communicate()
+        
+        if process.returncode == 0:
             print("✅ Clone successful.")
         else:
-            print(f"❌ Clone failed: {result.stderr}")
+            print(f"❌ Clone failed: {stderr.decode()}")
     else:
         print(f"📂 Repo already exists at {REPO_PATH}. Skipping clone.")
 
 def configure_opencode_json():
-    """Writes the OpenCode configuration file."""
+    """Writes the OpenCode configuration file (File I/O is fast enough to remain sync here)."""
     opencode_dir = Path.home() / ".config/opencode"
     opencode_dir.mkdir(parents=True, exist_ok=True)
     config_path = opencode_dir / "opencode.json"
 
-    # Strict OpenCode specific JSON configuration
     config_content = {
       "$schema": "https://opencode.ai/config.json",
       "model": "local-qwen/qwen",
@@ -86,23 +110,20 @@ def configure_opencode_json():
         json.dump(config_content, f, indent=2)
     print(f"⚙️ OpenCode config updated at {config_path}")
 
-def setup_environment():
+async def setup_environment():
     """Configures Git identity and auth for the existing repo."""
     print("🔧 Setting up Git identity...")
-    run_cmd(f'git config user.name "{GIT_USER}"')
-    run_cmd(f'git config user.email "{GIT_EMAIL}"')
+    await run_cmd(f'git config user.name "{GIT_USER}"')
+    await run_cmd(f'git config user.email "{GIT_EMAIL}"')
 
     auth_url = f"https://{GITHUB_TOKEN}@{REPO_URL}"
-    run_cmd(f"git remote set-url origin {auth_url}")
+    await run_cmd(f"git remote set-url origin {auth_url}")
 
 @bot.event
 async def on_ready():
-    # 1. Ensure repo exists
-    clone_if_not_exists()
-    # 2. Configure OpenCode
+    await clone_if_not_exists()
     configure_opencode_json()
-    # 3. Configure Git within that repo
-    setup_environment()
+    await setup_environment()
     print(f'🚀 {bot.user} is active. Prefix: !')
 
 # --- BOT COMMANDS ---
@@ -112,9 +133,8 @@ async def on_ready():
 @commands.is_owner()
 async def ask(ctx, *, question: str):
     async with ctx.typing():
-        # Instruct OpenCode explicitly not to edit files for an ask command
         safe_prompt = f"Explain the following. Do not modify or create any files: {question}"
-        res = run_cmd(f'opencode run "{safe_prompt}"')
+        res = await run_cmd(f'opencode run "{safe_prompt}"')
 
     content = res.stdout or "OpenCode found no answer."
 
@@ -124,22 +144,22 @@ async def ask(ctx, *, question: str):
     else:
         await ctx.reply(content)
 
-@bot.command(name="update")  # Renamed from change
+@bot.command(name="update")
 @commands.guild_only()
 @commands.is_owner()
 async def update(ctx, *, prompt: str):
     await ctx.send("🔄 **Syncing and planning...**")
 
     async with ctx.typing():
-        run_cmd("git pull --rebase")
-        # Run OpenCode modification
-        run_cmd(f'opencode run "{prompt}"')
+        await run_cmd("git pull --rebase")
+        await run_cmd(f'opencode run "{prompt}"')
 
-    diff = run_cmd("git diff").stdout
+    diff_res = await run_cmd("git diff")
+    diff = diff_res.stdout
+    
     if not diff.strip():
         return await ctx.send("⚠️ No changes detected.")
 
-    # Create the review file
     with io.BytesIO(diff.encode()) as buf:
         review_msg = await ctx.send(
             "📝 **Review changes.** React ✅ to Push or ❌ to Discard.",
@@ -157,37 +177,38 @@ async def update(ctx, *, prompt: str):
 
         if str(reaction.emoji) == "✅":
             await ctx.send("🚀 **Pushing...**")
-            msg_res = client.chat.completions.create(
+            
+            # Awaiting the AsyncOpenAI completion
+            msg_res = await client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[{"role": "user", "content": f"Write a 1-line commit message for:\n{diff[:2000]}"}]
             )
             commit_msg = msg_res.choices[0].message.content.strip().strip('"')
 
-            run_cmd("git add .")
-            run_cmd(f'git commit -m "{commit_msg}"')
-            push_res = run_cmd("git push")
+            await run_cmd("git add .")
+            await run_cmd(f'git commit -m "{commit_msg}"')
+            push_res = await run_cmd("git push")
 
             if push_res.returncode == 0:
                 await ctx.send(f"✅ **Pushed!**\n`{commit_msg}`")
             else:
                 await ctx.send(f"❌ **Push failed:**\n```{push_res.stderr}```")
         else:
-            run_cmd("git reset --hard HEAD")
+            await run_cmd("git reset --hard HEAD")
             await ctx.send("🗑️ **Discarded.**")
 
     except asyncio.TimeoutError:
-        run_cmd("git reset --hard HEAD")
+        await run_cmd("git reset --hard HEAD")
         await ctx.send("⏰ **Timed out.** Resetting.")
 
 @bot.command(name="revert")
 @commands.guild_only()
 @commands.is_owner()
 async def revert(ctx):
-    # Fetch latest state
-    run_cmd("git pull --rebase")
-
-    # Get the last commit message to show the user what they are reverting
-    last_commit = run_cmd("git log -1 --oneline").stdout
+    await run_cmd("git pull --rebase")
+    
+    last_commit_res = await run_cmd("git log -1 --oneline")
+    last_commit = last_commit_res.stdout
 
     confirm_msg = await ctx.send(f"⚠️ **Are you sure you want to revert the last commit?**\n`{last_commit}`\n\nReact ✅ to Revert or ❌ to Cancel.")
     await confirm_msg.add_reaction("✅")
@@ -201,8 +222,10 @@ async def revert(ctx):
 
         if str(reaction.emoji) == "✅":
             await ctx.send("⏪ **Reverting...**")
-            if run_cmd("git revert HEAD --no-edit").returncode == 0:
-                push_res = run_cmd("git push")
+            
+            revert_res = await run_cmd("git revert HEAD --no-edit")
+            if revert_res.returncode == 0:
+                push_res = await run_cmd("git push")
                 if push_res.returncode == 0:
                     await ctx.send("✅ **Revert successful and pushed.**")
                 else:
