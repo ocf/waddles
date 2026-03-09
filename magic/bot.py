@@ -32,7 +32,7 @@ client = OpenAI(base_url=SGLANG_API_URL, api_key="local")
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-bot = commands.Bot(command_prefix='?', intents=intents, owner_ids=OWNER_IDS, help_command=None)
+bot = commands.Bot(command_prefix='!', intents=intents, owner_ids=OWNER_IDS, help_command=None)
 
 def run_cmd(cmd, cwd=REPO_PATH):
     return subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd)
@@ -103,16 +103,16 @@ async def on_ready():
     configure_opencode_json()
     # 3. Configure Git within that repo
     setup_environment()
-    print(f'🚀 {bot.user} is active. Prefix: ?')
+    print(f'🚀 {bot.user} is active. Prefix: !')
 
 # --- BOT COMMANDS ---
 
-@bot.command(name="explain")
+@bot.command(name="ask")
 @commands.guild_only()
 @commands.is_owner()
-async def explain(ctx, *, question: str):
+async def ask(ctx, *, question: str):
     async with ctx.typing():
-        # Instruct OpenCode explicitly not to edit files for an explain command
+        # Instruct OpenCode explicitly not to edit files for an ask command
         safe_prompt = f"Explain the following. Do not modify or create any files: {question}"
         res = run_cmd(f'opencode run "{safe_prompt}"')
 
@@ -124,15 +124,14 @@ async def explain(ctx, *, question: str):
     else:
         await ctx.reply(content)
 
-@bot.command(name="change")
+@bot.command(name="update")  # Renamed from change
 @commands.guild_only()
 @commands.is_owner()
-async def change(ctx, *, prompt: str):
+async def update(ctx, *, prompt: str):
     await ctx.send("🔄 **Syncing and planning...**")
 
     async with ctx.typing():
         run_cmd("git pull --rebase")
-
         # Run OpenCode modification
         run_cmd(f'opencode run "{prompt}"')
 
@@ -140,6 +139,7 @@ async def change(ctx, *, prompt: str):
     if not diff.strip():
         return await ctx.send("⚠️ No changes detected.")
 
+    # Create the review file
     with io.BytesIO(diff.encode()) as buf:
         review_msg = await ctx.send(
             "📝 **Review changes.** React ✅ to Push or ❌ to Discard.",
@@ -183,12 +183,36 @@ async def change(ctx, *, prompt: str):
 @commands.guild_only()
 @commands.is_owner()
 async def revert(ctx):
-    await ctx.send("⏪ **Reverting...**")
+    # Fetch latest state
     run_cmd("git pull --rebase")
-    if run_cmd("git revert HEAD --no-edit").returncode == 0:
-        run_cmd("git push")
-        await ctx.send("✅ **Revert successful.**")
-    else:
-        await ctx.send("❌ **Revert failed.**")
+
+    # Get the last commit message to show the user what they are reverting
+    last_commit = run_cmd("git log -1 --oneline").stdout
+
+    confirm_msg = await ctx.send(f"⚠️ **Are you sure you want to revert the last commit?**\n`{last_commit}`\n\nReact ✅ to Revert or ❌ to Cancel.")
+    await confirm_msg.add_reaction("✅")
+    await confirm_msg.add_reaction("❌")
+
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
+
+    try:
+        reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+
+        if str(reaction.emoji) == "✅":
+            await ctx.send("⏪ **Reverting...**")
+            if run_cmd("git revert HEAD --no-edit").returncode == 0:
+                push_res = run_cmd("git push")
+                if push_res.returncode == 0:
+                    await ctx.send("✅ **Revert successful and pushed.**")
+                else:
+                    await ctx.send(f"❌ **Revert committed locally, but push failed:**\n```{push_res.stderr}```")
+            else:
+                await ctx.send("❌ **Revert failed (likely a conflict).**")
+        else:
+            await ctx.send("👍 **Revert cancelled.**")
+
+    except asyncio.TimeoutError:
+        await ctx.send("⏰ **Revert timed out.** No action taken.")
 
 bot.run(DISCORD_TOKEN)
