@@ -75,36 +75,41 @@ async def proxy_completions(request: Request):
     except Exception as e:
         return {"error": str(e)}
 
+    # --- 4.5. GUARD AGAINST UPSTREAM ERRORS ---
+    # If the upstream API returns an error, it won't have 'choices'.
+    # We return the raw data directly so the client can see the error.
+    if "choices" not in data or not data["choices"]:
+        return data
+
     # --- 5. PARSE XML TOOL CALLS ---
-    if "choices" in data and len(data["choices"]) > 0:
-        message = data["choices"][0].get("message", {})
-        content = message.get("content", "")
+    message = data["choices"][0].get("message", {})
+    content = message.get("content", "")
 
-        tool_call_pattern = r"<tool_call>\s*({.*?})\s*</tool_call>"
-        matches = list(re.finditer(tool_call_pattern, content or "", re.DOTALL))
+    tool_call_pattern = r"<tool_call>\s*({.*?})\s*</tool_call>"
+    matches = list(re.finditer(tool_call_pattern, content or "", re.DOTALL))
 
-        if matches:
-            tool_calls = []
-            for match in matches:
-                try:
-                    tool_data = json.loads(match.group(1))
-                    tool_calls.append({
-                        "id": f"call_{uuid.uuid4().hex[:8]}",
-                        "type": "function",
-                        "function": {
-                            "name": tool_data.get("name"),
-                            "arguments": json.dumps(tool_data.get("arguments", {}))
-                        }
-                    })
-                except json.JSONDecodeError:
-                    continue
+    if matches:
+        tool_calls = []
+        for match in matches:
+            try:
+                tool_data = json.loads(match.group(1))
+                tool_calls.append({
+                    "id": f"call_{uuid.uuid4().hex[:8]}",
+                    "type": "function",
+                    "function": {
+                        "name": tool_data.get("name"),
+                        "arguments": json.dumps(tool_data.get("arguments", {}))
+                    }
+                })
+            except json.JSONDecodeError:
+                continue
 
-            if tool_calls:
-                clean_content = re.sub(tool_call_pattern, "", content, flags=re.DOTALL).strip()
-                message["content"] = clean_content if clean_content else None
-                message["tool_calls"] = tool_calls
-                data["choices"][0]["message"] = message
-                data["choices"][0]["finish_reason"] = "tool_calls"
+        if tool_calls:
+            clean_content = re.sub(tool_call_pattern, "", content, flags=re.DOTALL).strip()
+            message["content"] = clean_content if clean_content else None
+            message["tool_calls"] = tool_calls
+            data["choices"][0]["message"] = message
+            data["choices"][0]["finish_reason"] = "tool_calls"
 
     # --- 6. FAKE THE STREAM BACK TO OPENCODE ---
     if original_stream:
