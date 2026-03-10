@@ -19,20 +19,11 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from config import (
-    LLM_REPETITION_PENALTY,
-    SGLANG_URL,
     OLLAMA_URL,
-    MODEL_NAME,
     EMBEDDING_NAME,
     DOCS_DIR,
     STORAGE_DIR,
     SYNC_SCRIPT,
-    LLM_CONTEXT_WINDOW,
-    LLM_TIMEOUT,
-    LLM_TEMPERATURE,
-    LLM_FREQUENCY_PENALTY,
-    LLM_PRESENCE_PENALTY,
-    LLM_MIN_P,
     EMBED_BATCH_SIZE,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
@@ -53,38 +44,7 @@ class CleanHTMLReader(BaseReader):
         return [Document(text=text, extra_info=extra_info or {})]
 
 
-def get_llm(thinking: bool) -> OpenAILike:
-    """Create an LLM instance with optional thinking mode.
-
-    Args:
-        thinking: Whether to enable thinking mode.
-
-    Returns:
-        Configured OpenAILike LLM instance.
-    """
-    return OpenAILike(
-        model=MODEL_NAME,
-        api_base=SGLANG_URL,
-        api_key="fake-key",
-        context_window=LLM_CONTEXT_WINDOW,
-        is_chat_model=True,
-        is_function_calling_model=True,
-        timeout=LLM_TIMEOUT,
-        temperature=LLM_TEMPERATURE,
-        additional_kwargs={
-            "stop": ["<|im_end|>", "<|im_start|>", "\nUser:"],
-            "frequency_penalty": LLM_FREQUENCY_PENALTY,
-            "presence_penalty": LLM_PRESENCE_PENALTY,
-            "extra_body": {
-                "chat_template_kwargs": {"enable_thinking": thinking},
-                "repetition_penalty": LLM_REPETITION_PENALTY,
-                "min_p": LLM_MIN_P
-            }
-        }
-    )
-
-
-def setup_settings(llm: OpenAILike) -> None:
+def setup_llm(llm: OpenAILike) -> None:
     """Configure global LlamaIndex settings.
 
     Args:
@@ -134,7 +94,7 @@ def _load_documents() -> list[Document]:
     return documents
 
 
-def build_or_load_index() -> VectorStoreIndex:
+def get_index() -> VectorStoreIndex:
     """Loads the index instantly from ChromaDB if it exists, otherwise builds it.
 
     Returns:
@@ -171,7 +131,7 @@ def build_or_load_index() -> VectorStoreIndex:
     return index
 
 
-def update_existing_index(index: VectorStoreIndex, run_script: bool = True) -> int:
+def update_index(index: VectorStoreIndex, run_script: bool = True) -> int:
     """Pulls the latest files and only embeds documents that have changed.
 
     Args:

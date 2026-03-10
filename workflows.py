@@ -1,7 +1,6 @@
 """OCF Agent Workflow using LlamaIndex Workflow system."""
 
 import asyncio
-import json
 import re
 import time
 from typing import Optional, List, Callable, Awaitable, Any, Dict
@@ -18,15 +17,12 @@ from llama_index.core import VectorStoreIndex
 from llama_index.llms.openai_like import OpenAILike
 
 from events import (
-    QueryReceivedEvent,
     AgentInputEvent,
     ToolDecisionEvent,
-    ToolResultEvent,
     ContextGatheredEvent,
-    StreamChunkEvent,
     ResponseCompleteEvent,
 )
-from tools import get_all_tools, get_tool_decision_prompt
+from tools.tools import get_all_tools, get_tool_prompt
 
 
 # Type alias for the message update callback
@@ -110,7 +106,7 @@ class OCFAgentWorkflow(Workflow):
         system_content = self._persona_prompt.format(
             context_str="", 
             query_str=self._question
-        ) + "\n\n" + get_tool_decision_prompt(self._question)
+        ) + "\n\n" + get_tool_prompt(self._question)
 
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
@@ -220,7 +216,7 @@ class OCFAgentWorkflow(Workflow):
             kwargs = tool_call.get("kwargs", {})
 
             if name in self.tool_map:
-                param_str = ", ".join([f"{v}" for k, v in kwargs.items()])
+                param_str = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
                 labels.append(f"{name}: {param_str}")
                 tasks.append(self.tool_map[name].acall(**kwargs))
             else:

@@ -24,25 +24,24 @@ from config import (
     DOCS_DIR,
     SGLANG_URL,
 )
-from index_manager import (
-    get_llm,
-    setup_settings,
-    build_or_load_index,
-    update_existing_index,
+from database import (
+    setup_llm,
+    get_index,
+    update_index,
 )
+from llm import get_llm
 from prompts import (
     is_valid_persona_name,
     get_user_default_persona,
     set_user_default_persona,
     get_persona_prompt,
-    format_persona_prompt,
     persona_exists,
     get_persona_data,
     save_persona,
     delete_persona,
     list_personas,
 )
-from agent_workflows import OCFAgentWorkflow, run_query_workflow
+from workflows import OCFAgentWorkflow
 from events import ResponseCompleteEvent
 
 
@@ -53,7 +52,7 @@ llm_standard = get_llm(thinking=False)
 llm_thinking = get_llm(thinking=True)
 
 # Configure global settings
-setup_settings(llm_standard)
+setup_llm(llm_standard)
 
 
 # --- 2. DISCORD BOT SETUP ---
@@ -73,7 +72,7 @@ class OCFBot(commands.Bot):
 
     async def setup_hook(self):
         """Initialize the index and workflow on bot startup."""
-        self.index = await asyncio.to_thread(build_or_load_index)
+        self.index = await asyncio.to_thread(get_index)
         self._setup_workflow()
         self.update_docs_loop.start()
 
@@ -93,7 +92,7 @@ class OCFBot(commands.Bot):
             return
         print("⏰ Running scheduled hourly docs update...")
         try:
-            await asyncio.to_thread(update_existing_index, self.index)
+            await asyncio.to_thread(update_index, self.index)
             self._setup_workflow()  # Refresh workflow with updated index
             print("✅ Hourly smart-update complete.")
         except Exception as e:
@@ -369,7 +368,7 @@ async def note(ctx, *, content: str):
 async def reload(ctx):
     msg = await ctx.reply("🔄 Checking for changed documents and updating the index...")
     try:
-        await asyncio.to_thread(update_existing_index, bot.index, False)
+        await asyncio.to_thread(update_index, bot.index, False)
         bot._setup_workflow()
         await msg.edit(content="✅ Successfully smartly updated the index!")
     except Exception as e:
@@ -381,7 +380,7 @@ async def reload(ctx):
 async def reloadfull(ctx):
     msg = await ctx.reply("🔄 Checking for changed documents and updating the index...")
     try:
-        await asyncio.to_thread(update_existing_index, bot.index)
+        await asyncio.to_thread(update_index, bot.index)
         bot._setup_workflow()
         await msg.edit(content="✅ Successfully synced and smartly updated the index!")
     except Exception as e:

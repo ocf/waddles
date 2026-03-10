@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 ENV PYTHONUNBUFFERED=1
 
@@ -13,11 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot.py .
 COPY sync.sh .
 
-COPY agent_workflows.py .
+COPY workflows.py .
 COPY config.py .
 COPY events.py .
-COPY index_manager.py .
+COPY database.py .
+COPY llm.py .
 COPY prompts.py .
-COPY tools.py .
+COPY tools/ ./tools/
 
 CMD ["python", "bot.py"]
