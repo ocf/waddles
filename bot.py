@@ -41,7 +41,7 @@ from prompts import (
     delete_persona,
     list_personas,
 )
-from workflows import OCFAgentWorkflow
+from workflow import OCFAgentWorkflow
 from events import ResponseCompleteEvent
 
 
