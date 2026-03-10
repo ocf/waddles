@@ -13,6 +13,7 @@ from llama_index.core import (
     load_index_from_storage,
     Document,
 )
+from llama_index.core.schema import TextNode
 from llama_index.core.readers.base import BaseReader
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.embeddings.ollama import OllamaEmbedding
@@ -28,6 +29,25 @@ from config import (
     CHUNK_SIZE,
     CHUNK_OVERLAP,
 )
+
+# Patch TextNode.hash to ignore date metadata to ensure consistent hashing
+# during index.refresh_ref_docs() even if file timestamps change.
+_original_hash = TextNode.hash.fget
+
+
+def _custom_hash(self) -> str:
+    # Temporarily remove volatile keys to ensure consistent hashing
+    val = self.metadata.pop("last_modified_date", None)
+    try:
+        return _original_hash(self)
+    finally:
+        # Restore it for use in retrieval/reranking
+        if val is not None:
+            self.metadata["last_modified_date"] = val
+
+
+TextNode.hash = property(_custom_hash)
+
 
 
 class CleanHTMLReader(BaseReader):
@@ -70,10 +90,32 @@ def _clean_document_metadata(documents: list[Document]) -> None:
         documents: List of documents to clean.
     """
     for doc in documents:
-        doc.metadata.pop("last_modified_date", None)
+        # Preserve last_modified_date as a fallback for non-Git files
         doc.metadata.pop("creation_date", None)
         doc.metadata.pop("last_accessed_date", None)
         doc.metadata.pop("file_size", None)
+
+
+def _get_file_metadata(file_path: str) -> dict:
+    """Extract true last modified date from Git for OCF docs."""
+    # Only applies to docs synced from git
+    if "/ocf/" not in file_path:
+        return {}
+    try:
+        rel_path = file_path.split("/ocf/", 1)[1]
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%cI", "--", f"docs/{rel_path}"],
+            cwd="/app/cache/ocf_mkdocs",
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        git_date = result.stdout.strip()
+        if git_date:
+            # Return just YYYY-MM-DD
+            return {"last_modified_date": git_date[:10]}
+    except Exception:
+        pass
 
 
 def _load_documents() -> list[Document]:
@@ -88,6 +130,7 @@ def _load_documents() -> list[Document]:
         required_exts=[".md", ".html", ".txt"],
         file_extractor={".html": CleanHTMLReader()},
         filename_as_id=True,
+        file_metadata=_get_file_metadata,
     )
     documents = reader.load_data(show_progress=True)
     _clean_document_metadata(documents)
