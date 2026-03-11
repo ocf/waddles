@@ -66,5 +66,8 @@ def create_user_info_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
         async_fn=get_ocf_user_info,
         name="get_ocf_user_info",
-        description="Retrieve OCF user details (name, email, creation time) and printing quota limits by username. Useful when asked about a specific user's status or print limits."
+        description=(
+            "Retrieve OCF user details (name, email, creation time) and printing quota limits by username. "
+            "Useful when asked about a specific user's status or print limits."
+        )
     )

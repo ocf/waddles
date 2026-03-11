@@ -29,5 +29,8 @@ def create_web_search_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
         async_fn=search_web,
         name="search_web",
-        description="Search the internet for recent news and facts not related to OCF. Use for general knowledge, current events, and external information."
+        description=(
+            "Search the internet for recent news and facts not related to OCF. "
+            "Use for general knowledge, current events, and external information."
+        ),
     )
