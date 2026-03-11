@@ -16,11 +16,15 @@ def create_python_run_tool() -> FunctionTool:
 
         try {
             const pyodide = await loadPyodide();
-            // Read the Python code directly from standard input
             const code = fs.readFileSync(0, 'utf-8');
 
-            // Execute the sandbox
-            await pyodide.runPythonAsync(code);
+            // Execute the sandbox and capture the final expression's result
+            const result = await pyodide.runPythonAsync(code);
+
+            // If the code evaluated to something, log it so stdout captures it
+            if (result !== undefined) {
+                console.log(result);
+            }
         } catch (err) {
             console.error("[Sandbox Execution Error]:\\n", err);
             process.exit(1);
