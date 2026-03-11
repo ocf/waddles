@@ -65,7 +65,7 @@ def create_python_run_tool() -> FunctionTool:
         except Exception as e:
             return f"Execution Error: Tool failed unexpectedly: {e}"
 
-    async def python_run(code: str) -> str:
+    async def run_python(code: str) -> str:
         """
         Executes arbitrary Python code in a highly secure WebAssembly sandbox.
         """
@@ -85,8 +85,8 @@ def create_python_run_tool() -> FunctionTool:
             return f"Tool execution failed: {e}"
 
     return FunctionTool.from_defaults(
-        async_fn=python_run,
-        name="python_run",
+        async_fn=run_python,
+        name="run_python",
         description=(
             "Executes untrusted Python code safely in an isolated environment. "
             "Use this to perform complex math, string manipulation, or logic operations. "

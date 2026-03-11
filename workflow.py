@@ -233,8 +233,6 @@ class OCFAgentWorkflow(Workflow):
         # Format observations for the LLM
         context_pieces = [f"--- Tool Result: {l} ---\n{r}" for l, r in zip(labels, results)]
 
-        await ctx.reply(str(context_pieces))
-
         return ContextGatheredEvent(
             context_str="Tool Results:\n" + "\n\n".join(context_pieces),
             query_str=self._question,
