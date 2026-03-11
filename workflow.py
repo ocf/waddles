@@ -59,7 +59,7 @@ class OCFAgentWorkflow(Workflow):
         self._message_callback: Optional[MessageCallback] = None
         self._cancelled: bool = False
         self._chat_history: List[ChatMessage] = []
-        self._max_loops = 5
+        self._max_loops = 20
         self._loop_count = 0
         self._question = ""
         self._user_name = "User"
