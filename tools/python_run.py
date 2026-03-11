@@ -1,6 +1,7 @@
 import asyncio
 import subprocess
 import os
+import textwrap
 from llama_index.core.tools import FunctionTool
 
 def create_python_run_tool() -> FunctionTool:
@@ -67,13 +68,18 @@ def create_python_run_tool() -> FunctionTool:
     async def python_run(code: str) -> str:
         """
         Executes arbitrary Python code in a highly secure WebAssembly sandbox.
-
-        Args:
-            code: The Python script to execute. Use print() statements to output results.
         """
+        # 1. Strip markdown backticks if the LLM added them
+        clean_code = code.strip()
+        if clean_code.startswith("```"):
+            clean_code = "\n".join(clean_code.split("\n")[1:-1])
+
+        # 2. Fix the indentation safely
+        clean_code = textwrap.dedent(clean_code.strip("\n"))
+
         try:
-            # Offload the blocking subprocess execution to a thread
-            output = await asyncio.to_thread(sync_execute_sandboxed, code)
+            # Pass the sanitized clean_code instead of the raw code
+            output = await asyncio.to_thread(sync_execute_sandboxed, clean_code)
             return output
         except Exception as e:
             return f"Tool execution failed: {e}"

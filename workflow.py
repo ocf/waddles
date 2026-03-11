@@ -74,21 +74,21 @@ class OCFAgentWorkflow(Workflow):
         parsed_calls = []
         # Matches <function=name> followed by <parameter=name>value</parameter>
         matches = re.finditer(
-            r"<function=(\w+)>\s*<parameter=(\w+)>(.*?)</parameter>", 
-            content, 
+            r"<function=(\w+)>\s*<parameter=(\w+)>(.*?)</parameter>",
+            content,
             re.DOTALL
         )
 
         for match in matches:
             fn_name = match.group(1)
             param_name = match.group(2)
-            param_val = match.group(3).strip()
+            param_val = match.group(3).strip("\n")
 
             parsed_calls.append({
                 "name": fn_name,
                 "kwargs": {param_name: param_val}
             })
-        
+
         return parsed_calls
 
     @step
@@ -104,7 +104,7 @@ class OCFAgentWorkflow(Workflow):
 
         # Construct the system persona including tool instructions
         system_content = self._persona_prompt.format(
-            context_str="", 
+            context_str="",
             query_str=self._question
         ) + "\n\n" + get_tool_prompt(self._question)
 
@@ -164,7 +164,7 @@ class OCFAgentWorkflow(Workflow):
                 # Limit thinking block length for Discord
                 truncated = thinking_text if len(thinking_text) <= 1800 else "..." + thinking_text[-1800:]
                 display_text = f"💭 **Thinking...**\n```text\n{truncated}\n```"
-            
+
             # Handle regular content deltas
             elif chunk.delta:
                 full_content += chunk.delta
@@ -232,7 +232,9 @@ class OCFAgentWorkflow(Workflow):
 
         # Format observations for the LLM
         context_pieces = [f"--- Tool Result: {l} ---\n{r}" for l, r in zip(labels, results)]
-        
+
+        await ctx.reply(str(context_pieces))
+
         return ContextGatheredEvent(
             context_str="Tool Results:\n" + "\n\n".join(context_pieces),
             query_str=self._question,
