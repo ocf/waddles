@@ -92,6 +92,6 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
         name="search_docs",
         description=(
             "Search internal OCF documentation about rules, services, and policies. "
-            "Use for OCF-specific questions about lab policies, printing, computing resources, etc.",
+            "Use for OCF-specific questions about lab policies, printing, computing resources, etc."
         ),
     )
