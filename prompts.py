@@ -27,12 +27,11 @@ def format_persona_prompt(base_prompt: str) -> str:
         base_prompt: The base prompt text.
 
     Returns:
-        The formatted prompt with context_str and query_str placeholders.
+        The formatted prompt with query_str placeholder.
     """
-    if "{context_str}" not in base_prompt and "{query_str}" not in base_prompt:
+    if "{query_str}" not in base_prompt:
         return (
             f"{base_prompt}\n\n"
-            "Context:\n---------\n{context_str}\n---------\n"
             "Query: {query_str}\nAnswer: "
         )
     return base_prompt
@@ -100,7 +99,7 @@ def get_persona_prompt(persona_name: str) -> str:
             pass
 
     # Bare minimum fallback just in case the default.json is deleted or corrupted
-    return "Context:\n---------\n{context_str}\n---------\nQuery: {query_str}\nAnswer: "
+    return "Query: {query_str}\nAnswer: "
 
 
 def persona_exists(name: str) -> bool:

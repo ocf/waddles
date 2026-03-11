@@ -103,10 +103,7 @@ class OCFAgentWorkflow(Workflow):
         self._loop_count = 0
 
         # Construct the system persona including tool instructions
-        system_content = self._persona_prompt.format(
-            context_str="",
-            query_str=self._question
-        ) + "\n\n" + get_tool_prompt(self._question)
+        system_content = self._persona_prompt.format(query_str=self._question) + "\n\n" + get_tool_prompt(self._question)
 
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
@@ -223,7 +220,12 @@ class OCFAgentWorkflow(Workflow):
                 print(f"Warning: LLM tried to call unknown tool {name}")
 
         if not tasks:
-            return ContextGatheredEvent(context_str="No valid tools were called.", query_str=self._question, persona_prompt=self._persona_prompt, use_thinking=self._use_thinking)
+            return ContextGatheredEvent(
+                context_str="No valid tools were called.",
+                query_str=self._question,
+                persona_prompt=self._persona_prompt,
+                use_thinking=self._use_thinking,
+            )
 
         if self._message_callback:
             await self._message_callback("🔍 Searching: " + " & ".join([f"`{l}`" for l in labels]))
