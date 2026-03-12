@@ -10,16 +10,17 @@ from tools.web_scrape import create_web_scrape_tool
 from tools.delegate import create_delegation_tool
 
 
-def get_tool_prompt(question: str) -> str:
+def get_tool_prompt(question: str, use_thinking: bool = False) -> str:
     """Generate the prompt for deciding which tools to use.
 
     Args:
         question: The user's question.
+        use_thinking: Whether the agent is in thinking mode.
 
     Returns:
         The formatted prompt string for tool decision.
     """
-    return (
+    prompt = (
         "You must decide what information to search for or what actions to take to answer the user's question. "
         "Call 'search_web' for general internet facts, current events, and news. You can use the 'page' parameter to see more results. "
         "Call 'scrape_url' to read the content of a specific webpage if you are given a URL or need to extract text from an external link. "
@@ -29,8 +30,19 @@ def get_tool_prompt(question: str) -> str:
         "Call 'run_python' if you need to perform complex math calculations, manipulate data, or run custom logic. "
         "You should call as many tools as necessary to fully address the user's question. "
         "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first. "
-        f"\n\nUser Question: {question}"
     )
+
+    if use_thinking:
+        prompt += (
+            "\n\nCRITICAL: You are in 'Thinking Mode'. Before making ANY tool calls, you MUST use your thinking space to:\n"
+            "1. Analyze the user's request carefully.\n"
+            "2. Outline a step-by-step 'Research Plan' explaining which tools you will use and why.\n"
+            "3. If a tool call reveals new information (like a URL or a specific service), stop and re-evaluate your plan in the next thinking step before proceeding.\n"
+            "4. Only provide a final answer once you have gathered all necessary context or exhausted your options."
+        )
+
+    prompt += f"\n\nUser Question: {question}"
+    return prompt
 
 
 def get_all_tools(index: VectorStoreIndex, depth: int = 0) -> dict:
