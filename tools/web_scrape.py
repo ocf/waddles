@@ -1,4 +1,5 @@
 import asyncio
+import re
 import trafilatura
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
@@ -13,47 +14,53 @@ def create_web_scrape_tool() -> FunctionTool:
     def sync_scrape_url(url: str) -> str:
         """Synchronously fetch and parse a URL using trafilatura and BeautifulSoup for links."""
         try:
-            # Trafilatura's built-in downloader is robust and handles user-agents/timeouts
+            # 1. Fetch URL and handle failures immediately
             downloaded = trafilatura.fetch_url(url)
-
             if downloaded is None:
-                return "Error: Could not fetch the webpage. The site may be blocking scrapers or is currently down."
+                return f"Error: Could not fetch content from {url}. The site may be blocking scrapers."
 
-            # Extract Main Text Content
+            # 2. Extract content in Markdown format for better LLM comprehension
             text = trafilatura.extract(
                 downloaded,
                 include_comments=False,
                 include_tables=True,
-                no_fallback=False
+                no_fallback=False,
+                output_format="markdown"  # <-- CRITICAL: Keeps headers, lists, and structure
             )
 
-            # Fallback to BeautifulSoup if trafilatura extraction fails (e.g., non-article pages)
+            # 3. Parse with BeautifulSoup ONCE for both fallback and link extraction
             soup = BeautifulSoup(downloaded, "html.parser")
+
+            # 4. Improved Fallback Logic
             if not text:
-                # Remove common navigational and boilerplate elements for fallback text
-                for tag in soup(["script", "style", "header", "footer", "nav", "aside"]):
+                # Remove useless tags
+                for tag in soup(["script", "style", "header", "footer", "nav", "aside", "noscript", "iframe", "form"]):
                     tag.decompose()
-                text = soup.get_text(separator="\n", strip=True)
+                text = soup.get_text(separator="\n\n", strip=True)
+                # Clean up excessive blank lines
+                text = re.sub(r'\n{3,}', '\n\n', text)
 
             if not text:
-                return "The page was successfully fetched but no readable text was found."
+                return f"--- Content of {url} ---\n\nNo readable text could be extracted."
 
-            # Extract Links for Traversal (Navigational Discovery)
+            # 5. Extract Links Cleanly
             links = []
             seen_hrefs = set()
 
-            # Re-parse to ensure we have the full document for link discovery
-            link_soup = BeautifulSoup(downloaded, "html.parser")
-            for a in link_soup.find_all("a", href=True):
+            for a in soup.find_all("a", href=True):
                 href = a["href"].strip()
-                link_text = a.get_text(strip=True)
 
-                # Normalize relative URLs to absolute URLs
+                # Ignore anchor links, javascript, and mailto
+                if href.startswith(("javascript:", "#", "mailto:", "tel:")):
+                    continue
+
+                # Clean up link text (removes internal newlines/tabs)
+                raw_text = a.get_text(strip=True)
+                link_text = " ".join(raw_text.split())
+
                 absolute_url = urljoin(url, href)
 
-                # Quality filtering for links
                 if absolute_url.startswith(("http://", "https://")) and absolute_url not in seen_hrefs:
-                    # Filter out noise: very short text, empty links, or extremely long text
                     if 2 < len(link_text) < 100:
                         links.append(f"- [{link_text}]({absolute_url})")
                         seen_hrefs.add(absolute_url)
@@ -61,20 +68,23 @@ def create_web_scrape_tool() -> FunctionTool:
                 if len(links) >= WEB_SCRAPE_MAX_LINKS:
                     break
 
-            # Final Formatting and Context Management
+            # 6. Smarter Truncation (tries not to cut off mid-word)
             if len(text) > WEB_SCRAPE_MAX_LEN:
-                text = text[:WEB_SCRAPE_MAX_LEN] + "\n... (Content truncated)"
+                text = text[:WEB_SCRAPE_MAX_LEN]
+                # Try to snap back to the last newline so we don't cut a sentence in half
+                last_newline = text.rfind("\n")
+                if last_newline > (WEB_SCRAPE_MAX_LEN * 0.75):
+                    text = text[:last_newline]
+                text += "\n\n... (Content truncated due to length limits)"
 
+            # 7. Assemble Output
             output = f"--- Content of {url} ---\n\n{text}\n\n--- Links Found ---\n"
-            if links:
-                output += "\n".join(links)
-            else:
-                output += "No significant internal or external links discovered on this page."
+            output += "\n".join(links) if links else "No significant internal or external links discovered."
 
             return output
 
         except Exception as e:
-            return f"Error scraping URL: {e}"
+            return f"Error scraping URL '{url}': {str(e)}"
 
     async def scrape_url(url: str) -> str:
         """Fetch a webpage and return its cleaned text content and discovered links."""
