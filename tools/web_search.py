@@ -2,6 +2,8 @@ import asyncio
 from ddgs import DDGS
 from llama_index.core.tools import FunctionTool
 
+from config import WEB_SEARCH_MAX_RESULTS
+
 
 def create_web_search_tool() -> FunctionTool:
     """Web search tool updated for the post-v7 'Simplified' DDGS."""
@@ -10,7 +12,7 @@ def create_web_search_tool() -> FunctionTool:
         """The actual blocking call."""
         # Note: deedy5 added mandatory delays, so we keep max_results low
         with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=3))
+            return list(ddgs.text(query, max_results=WEB_SEARCH_MAX_RESULTS))
 
     async def search_web(query: str) -> str:
         try:

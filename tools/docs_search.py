@@ -6,7 +6,7 @@ from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.tools import FunctionTool
 
-from config import DOCS_RETRIEVE_CHUNKS
+from config import DOCS_RECENCY_WEIGHT, DOCS_RETRIEVE_CHUNKS, DOCS_TOP_N, RERANK_TOP_N
 
 
 class RecencyReranker(BaseNodePostprocessor):
@@ -80,7 +80,7 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
                 return "No internal documentation found."
 
             # Rerank nodes based on recency
-            reranker = RecencyReranker(top_n=5)
+            reranker = RecencyReranker(top_n=DOCS_TOP_N, recency_weight=DOCS_RECENCY_WEIGHT)
             nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
 
             return "\n---------------------\n".join([n.get_content() for n in nodes])
