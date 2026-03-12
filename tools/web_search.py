@@ -25,7 +25,7 @@ def create_web_search_tool() -> FunctionTool:
 
         Args:
             query: The search terms.
-            page: The page number of results (each page contains 3 results). 
+            page: The page number of results (each page contains 3 results).
                   Increase this if you didn't find what you need on the first page.
         """
         try:

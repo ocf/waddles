@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "autopep8>=2.3.2",
     "beautifulsoup4==4.14.3",
     "chromadb==1.5.5",
     "ddgs>=9.11.3",
@@ -22,3 +23,7 @@ dependencies = [
 
 [tool.uv.sources]
 ocflib = { git = "https://github.com/ocf/ocflib.git", rev = "31d446a36245fe4213970d6a8d200067128e8b05" }
+
+[tool.uv]
+managed = true
+

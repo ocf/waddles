@@ -110,7 +110,7 @@ async def get_attachment_data_url(attachment: discord.Attachment) -> Optional[st
     """Downloads a Discord attachment and converts it to a base64 data URL."""
     if not attachment.content_type or not attachment.content_type.startswith("image/"):
         return None
-    
+
     try:
         data = await attachment.read()
         base64_data = base64.b64encode(data).decode("utf-8")
@@ -118,6 +118,7 @@ async def get_attachment_data_url(attachment: discord.Attachment) -> Optional[st
     except Exception as e:
         print(f"Error processing attachment {attachment.filename}: {e}")
         return None
+
 
 async def process_query(
     ctx: commands.Context,
@@ -215,6 +216,7 @@ async def process_query(
 async def on_ready():
     print(f"Logged in as {bot.user} - ready to answer OCF questions!")
 
+
 @bot.command(name="ping")
 @commands.guild_only()
 async def ping(ctx):
@@ -226,6 +228,7 @@ async def ping(ctx):
     round_trip = round((end_time - start_time) * 1000)
     await message.edit(content=f"🏓 **Pong!**\nWebsocket: `{api_latency}ms`\nRound-trip: `{round_trip}ms`")
 
+
 @bot.command(name="ask")
 @commands.guild_only()
 async def ask(ctx, *, question: Optional[str] = None):
@@ -234,6 +237,7 @@ async def ask(ctx, *, question: Optional[str] = None):
     prompt_str = get_persona_prompt(persona_name)
     await process_query(ctx, question, prompt_str, use_thinking=False, attachments=ctx.message.attachments)
 
+
 @bot.command(name="think")
 @commands.guild_only()
 async def think(ctx, *, question: Optional[str] = None):
@@ -241,6 +245,7 @@ async def think(ctx, *, question: Optional[str] = None):
     persona_name = get_user_default_persona(ctx.author.id)
     prompt_str = get_persona_prompt(persona_name)
     await process_query(ctx, question, prompt_str, use_thinking=True, attachments=ctx.message.attachments)
+
 
 @bot.command(name="askas")
 @commands.guild_only()
@@ -256,6 +261,7 @@ async def askas(ctx, name: str, *, question: Optional[str] = None):
     prompt = get_persona_prompt(name)
     await process_query(ctx, question, prompt, use_thinking=False, attachments=ctx.message.attachments)
 
+
 @bot.command(name="thinkas")
 @commands.guild_only()
 async def thinkas(ctx, name: str, *, question: Optional[str] = None):
@@ -269,6 +275,7 @@ async def thinkas(ctx, name: str, *, question: Optional[str] = None):
 
     prompt = get_persona_prompt(name)
     await process_query(ctx, question, prompt, use_thinking=True, attachments=ctx.message.attachments)
+
 
 @bot.command(name="stop")
 @commands.guild_only()
@@ -286,6 +293,8 @@ async def stop(ctx):
         await ctx.reply("You don't have any active queries to stop.")
 
 # --- 7. PERSONA MANAGEMENT ---
+
+
 @bot.group(name="persona", invoke_without_command=True)
 @commands.guild_only()
 async def persona(ctx):
@@ -298,6 +307,7 @@ async def persona(ctx):
         "`?persona list`\n"
         "`?persona view <name>`"
     )
+
 
 @persona.command(name="default")
 @commands.guild_only()
@@ -313,6 +323,7 @@ async def persona_default(ctx, name: str):
 
     set_user_default_persona(ctx.author.id, name)
     await ctx.reply(f"✅ Your default persona has been set to `{name}`!")
+
 
 @persona.command(name="set")
 @commands.guild_only()
@@ -331,6 +342,7 @@ async def persona_set(ctx, name: str, *, prompt: str):
 
     save_persona(name, ctx.author.id, prompt)
     await ctx.reply(f"✅ Persona `{name}` saved! Test it with `?askas {name} hi`.")
+
 
 @persona.command(name="delete")
 @commands.guild_only()
@@ -351,6 +363,7 @@ async def persona_delete(ctx, name: str):
     delete_persona(name)
     await ctx.reply(f"🗑️ Persona `{name}` has been deleted.")
 
+
 @persona.command(name="list")
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
@@ -360,6 +373,7 @@ async def persona_list(ctx):
     if not files:
         return await ctx.reply("No custom personas exist yet.")
     await ctx.reply(f"👥 **Available Personas:**\n" + "\n".join([f"- `{f}`" for f in files]))
+
 
 @persona.command(name="view")
 @commands.guild_only()
@@ -380,6 +394,8 @@ async def persona_view(ctx, name: str):
     await ctx.reply(f"**Persona:** `{name}`\n**Creator:** {creator}\n**Prompt:**\n```text\n{prompt_text}\n```")
 
 # --- 8. ADMIN UTILITIES ---
+
+
 @bot.command(name="note", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
@@ -391,6 +407,7 @@ async def note(ctx, *, content: str):
         await ctx.reply("✅ Note saved! Waddles will learn this on the next `?reload` or hourly sync.")
     except Exception as e:
         await ctx.reply(f"❌ Failed to save note: {e}")
+
 
 @bot.command(name="reload", hidden=True)
 @commands.guild_only()
@@ -404,6 +421,7 @@ async def reload(ctx):
     except Exception as e:
         await msg.edit(content=f"❌ Failed to update: {e}")
 
+
 @bot.command(name="reloadfull", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
@@ -415,6 +433,7 @@ async def reloadfull(ctx):
         await msg.edit(content="✅ Successfully synced and smartly updated the index!")
     except Exception as e:
         await msg.edit(content=f"❌ Failed to sync or update: {e}")
+
 
 @bot.command(name="eval", hidden=True)
 @commands.guild_only()
@@ -458,8 +477,8 @@ async def _eval(ctx, *, body: str):
     else:
         value = stdout.getvalue()
         try:
-            await ctx.message.add_reaction('\u2705') # Checkmark
-        except:
+            await ctx.message.add_reaction('\u2705')  # Checkmark
+        except BaseException:
             pass
 
         if ret is None:
@@ -468,6 +487,7 @@ async def _eval(ctx, *, body: str):
         else:
             bot._last_result = ret
             await ctx.send(f'```py\n{value}{ret}\n```')
+
 
 @bot.command(name="shell", hidden=True)
 @commands.guild_only()

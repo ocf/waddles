@@ -4,6 +4,7 @@ import os
 import textwrap
 from llama_index.core.tools import FunctionTool
 
+
 def create_python_run_tool() -> FunctionTool:
     """Create a tool to execute arbitrary Python code securely in a Wasm sandbox."""
 
@@ -43,7 +44,7 @@ def create_python_run_tool() -> FunctionTool:
                 capture_output=True,
                 text=True,
                 cwd=os.getcwd(),
-                timeout=15 # Important for LLMs: Prevent infinite loops from hanging the agent
+                timeout=15  # Important for LLMs: Prevent infinite loops from hanging the agent
             )
 
             # Combine stdout and stderr into a single string for the LLM to read

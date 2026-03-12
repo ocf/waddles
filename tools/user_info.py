@@ -5,6 +5,7 @@ from llama_index.core.tools import FunctionTool
 from ocflib.account.search import user_attrs
 from ocflib.printing.quota import get_connection, get_quota
 
+
 def create_user_info_tool() -> FunctionTool:
     """Create a tool to retrieve OCF user information and printing quotas."""
 

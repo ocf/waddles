@@ -49,7 +49,6 @@ def _custom_hash(self) -> str:
 TextNode.hash = property(_custom_hash)
 
 
-
 class CleanHTMLReader(BaseReader):
     """A custom reader that strips out web code and only keeps readable text."""
 
@@ -74,7 +73,8 @@ def setup_llm(llm: OpenAILike) -> None:
     Settings.embed_model = OllamaEmbedding(
         model_name=EMBEDDING_NAME,
         base_url=OLLAMA_URL,
-        keep_alive=-1,
+        keep_alive=-
+        1,
         query_instruction="Instruct: Given a Discord user's question, retrieve relevant OCF documentation passages that answer the query\nQuery: ",
         text_instruction="",
     )

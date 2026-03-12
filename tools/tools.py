@@ -33,13 +33,11 @@ def get_tool_prompt(question: str, use_thinking: bool = False) -> str:
     )
 
     if use_thinking:
-        prompt += (
-            "\n\nCRITICAL: You are in 'Thinking Mode'. Before making ANY tool calls, you MUST use your thinking space to:\n"
-            "1. Analyze the user's request carefully.\n"
-            "2. Outline a step-by-step 'Research Plan' explaining which tools you will use and why.\n"
-            "3. If a tool call reveals new information (like a URL or a specific service), stop and re-evaluate your plan in the next thinking step before proceeding.\n"
-            "4. Only provide a final answer once you have gathered all necessary context or exhausted your options."
-        )
+        prompt += ("\n\nCRITICAL: You are in 'Thinking Mode'. Before making ANY tool calls, you MUST use your thinking space to:\n"
+                   "1. Analyze the user's request carefully.\n"
+                   "2. Outline a step-by-step 'Research Plan' explaining which tools you will use and why.\n"
+                   "3. If a tool call reveals new information (like a URL or a specific service), stop and re-evaluate your plan in the next thinking step before proceeding.\n"
+                   "4. Only provide a final answer once you have gathered all necessary context or exhausted your options.")
 
     prompt += f"\n\nUser Question: {question}"
     return prompt
@@ -47,7 +45,7 @@ def get_tool_prompt(question: str, use_thinking: bool = False) -> str:
 
 def get_all_tools(index: VectorStoreIndex, depth: int = 0) -> dict:
     """Central registry of all tools available to the workflow.
-    
+
     Args:
         index: The document index.
         depth: The current recursion depth of the agent (used to prevent infinite delegation).

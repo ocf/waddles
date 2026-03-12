@@ -2,6 +2,7 @@ from llama_index.core.tools import FunctionTool
 from llama_index.core import VectorStoreIndex
 from llama_index.llms.openai_like import OpenAILike
 
+
 def create_delegation_tool(
     llm_standard: OpenAILike,
     llm_thinking: OpenAILike,
@@ -18,7 +19,7 @@ def create_delegation_tool(
         1. Scraping multiple links found on a page.
         2. Searching for and synthesizing information from many documents.
         3. Handling long-running tasks that would clutter your main context.
-        
+
         Args:
             task: A detailed description of what the sub-agent should do.
             use_thinking: Whether the sub-agent should use 'thinking' mode (slower but more thorough).
@@ -35,10 +36,10 @@ def create_delegation_tool(
             llm_standard=llm_standard,
             llm_thinking=llm_thinking,
             index=index,
-            timeout=180.0, # Shorter timeout for workers
+            timeout=180.0,  # Shorter timeout for workers
         )
-        
-        # Override the tool map for the worker to include the same tools 
+
+        # Override the tool map for the worker to include the same tools
         # but with an incremented depth
         from tools.tools import get_all_tools
         worker.tool_map = get_all_tools(index, depth=current_depth + 1)
@@ -62,7 +63,7 @@ def create_delegation_tool(
                 user_name="Manager Agent",
                 persona_prompt=worker_persona,
                 use_thinking=use_thinking,
-                message_callback=None 
+                message_callback=None
             )
 
             if isinstance(result, ResponseCompleteEvent):

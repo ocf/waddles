@@ -3,7 +3,7 @@
 import asyncio
 import re
 import time
-from typing import Optional, List, Callable, Awaitable, Any, Dict
+from typing import Optional, List, Callable, Awaitable, Any, Dict, Union
 
 from llama_index.core.workflow import (
     Workflow,
@@ -12,7 +12,7 @@ from llama_index.core.workflow import (
     StartEvent,
     StopEvent,
 )
-from llama_index.core.llms import ChatMessage, MessageRole
+from llama_index.core.llms import ChatMessage, ImageBlock, MessageRole, TextBlock
 from llama_index.core import VectorStoreIndex
 from llama_index.llms.openai_like import OpenAILike
 
@@ -106,18 +106,15 @@ class OCFAgentWorkflow(Workflow):
         self._loop_count = 0
 
         # Construct the system persona including tool instructions
-        system_content = self._persona_prompt.format(query_str=self._question) + "\n\n" + get_tool_prompt(self._question, use_thinking=self._use_thinking)
+        system_content = self._persona_prompt.format(
+            query_str=self._question) + "\n\n" + get_tool_prompt(self._question, use_thinking=self._use_thinking)
 
         # Construct multimodal message if images are provided
-        if image_urls:
-            user_blocks = [{"block_type": "text", "text": f"[{self._user_name}] says: \n{self._question}"}]
-            for url in image_urls:
-                user_blocks.append({"block_type": "image", "url": url})
-            
-            user_msg = ChatMessage(role=MessageRole.USER, blocks=user_blocks)
-        else:
-            user_msg = ChatMessage(role=MessageRole.USER, content=f"[{self._user_name}] says: \n{self._question}")
-
+        user_blocks: List[Union[TextBlock, ImageBlock]] = [
+            TextBlock(text=f"[{self._user_name}] says: \n{self._question}"),
+        ]
+        user_blocks.extend([ImageBlock(url=url) for url in image_urls])
+        user_msg = ChatMessage(role=MessageRole.USER, blocks=user_blocks)
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
             user_msg
@@ -132,7 +129,8 @@ class OCFAgentWorkflow(Workflow):
     async def handle_context(self, ctx: Context, ev: ContextGatheredEvent) -> AgentInputEvent:
         """Processes tool results and triggers the next reasoning step."""
         # Wrap tool results in a user message for the LLM to observe
-        self._chat_history.append(ChatMessage(role=MessageRole.USER, content=ev.context_str))
+        self._chat_history.append(ChatMessage(
+            role=MessageRole.USER, content=ev.context_str))
         return AgentInputEvent()
 
     @step
@@ -164,7 +162,8 @@ class OCFAgentWorkflow(Workflow):
 
         async for chunk in response_stream:
             if self._cancelled:
-                if hasattr(response_stream, "aclose"): await response_stream.aclose()
+                if hasattr(response_stream, "aclose"):
+                    await response_stream.aclose()
                 break
 
             # Handle thinking mode deltas
@@ -172,7 +171,8 @@ class OCFAgentWorkflow(Workflow):
             if think_delta:
                 thinking_text += think_delta
                 # Limit thinking block length for Discord
-                truncated = thinking_text if len(thinking_text) <= 1800 else "..." + thinking_text[-1800:]
+                truncated = thinking_text if len(
+                    thinking_text) <= 1800 else "..." + thinking_text[-1800:]
                 display_text = f"💭 **Thinking...**\n```text\n{truncated}\n```"
 
             # Handle regular content deltas
@@ -191,7 +191,8 @@ class OCFAgentWorkflow(Workflow):
         tool_calls = self._parse_qwen_tools(full_content)
 
         # Store assistant response in history
-        self._chat_history.append(ChatMessage(role=MessageRole.ASSISTANT, content=full_content))
+        self._chat_history.append(ChatMessage(
+            role=MessageRole.ASSISTANT, content=full_content))
 
         if tool_calls and not self._cancelled:
             return ToolDecisionEvent(
@@ -220,7 +221,8 @@ class OCFAgentWorkflow(Workflow):
         labels = []
 
         for tool_call in ev.tool_calls:
-            if self._cancelled: break
+            if self._cancelled:
+                break
 
             name = tool_call.get("name")
             kwargs = tool_call.get("kwargs", {})
@@ -246,7 +248,8 @@ class OCFAgentWorkflow(Workflow):
         results = await asyncio.gather(*tasks)
 
         # Format observations for the LLM
-        context_pieces = [f"--- Tool Result: {l} ---\n{r}" for l, r in zip(labels, results)]
+        context_pieces = [
+            f"--- Tool Result: {l} ---\n{r}" for l, r in zip(labels, results)]
 
         return ContextGatheredEvent(
             context_str="Tool Results:\n" + "\n\n".join(context_pieces),
