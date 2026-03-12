@@ -1,10 +1,16 @@
 """Index management for ChromaDB and document embedding."""
 
+import os
 import subprocess
 from typing import List, cast
 import chromadb
 from bs4 import BeautifulSoup
 
+from llama_index.core.memory import (
+    Memory,
+    FactExtractionMemoryBlock,
+    VectorMemoryBlock,
+)
 from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
@@ -28,6 +34,10 @@ from config import (
     EMBED_BATCH_SIZE,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
+    MEMORY_MAX_FACTS,
+    MEMORY_TOKEN_LIMIT,
+    MEMORY_CHAT_HISTORY_TOKEN_RATIO,
+    MEMORY_DB_URI,
 )
 
 # Patch TextNode.hash to ignore date metadata to ensure consistent hashing
@@ -200,3 +210,39 @@ def update_index(index: VectorStoreIndex, run_script: bool = True) -> int:
         index.storage_context.persist(persist_dir=STORAGE_DIR)
 
     return updated_count
+
+
+def get_user_memory(user_id: int, llm: OpenAILike) -> Memory:
+    """Gets or creates a persistent, block-based memory for a Discord user.
+
+    Args:
+        user_id: The Discord user ID.
+        llm: The LLM to use for fact extraction.
+
+    Returns:
+        A Memory instance for the user.
+    """
+    db = chromadb.PersistentClient(path=STORAGE_DIR)
+    # Unique collection name per user for long-term vector memory
+    collection_name = f"user_memory_{user_id}"
+    chroma_collection = db.get_or_create_collection(collection_name)
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+
+    # Memory Blocks
+    blocks = [
+        # Extracts and maintains persistent facts
+        FactExtractionMemoryBlock(llm=llm, max_facts=MEMORY_MAX_FACTS),
+        # Stores and retrieves semantic conversation chunks
+        VectorMemoryBlock(
+            vector_store=vector_store,
+            embed_model=Settings.embed_model,
+        )
+    ]
+
+    return Memory.from_defaults(
+        memory_blocks=blocks,
+        async_database_uri=MEMORY_DB_URI,
+        session_id=str(user_id),
+        token_limit=MEMORY_TOKEN_LIMIT,
+        chat_history_token_ratio=MEMORY_CHAT_HISTORY_TOKEN_RATIO
+    )

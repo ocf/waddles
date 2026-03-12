@@ -45,6 +45,7 @@ class OCFAgentWorkflow(Workflow):
         timeout: float = 300.0,
         verbose: bool = False,
         depth: int = 0,
+        memory: Optional[Any] = None,
     ):
         """Initialize the workflow."""
         super().__init__(timeout=timeout, verbose=verbose)
@@ -52,6 +53,7 @@ class OCFAgentWorkflow(Workflow):
         self.llm_thinking = llm_thinking
         self.index = index
         self.depth = depth
+        self.memory = memory
 
         # Create tools
         self.tool_map = get_all_tools(index, depth=depth)
@@ -109,14 +111,22 @@ class OCFAgentWorkflow(Workflow):
         system_content = self._persona_prompt.format(
             query_str=self._question) + "\n\n" + get_tool_prompt(self._question, use_thinking=self._use_thinking)
 
+        # Retrieve relevant past history from memory blocks
+        past_history = []
+        if self.memory:
+            # For multimodal queries, we only search memory with the text part
+            past_history = self.memory.get(input=self._question)
+
         # Construct multimodal message if images are provided
         user_blocks: List[Union[TextBlock, ImageBlock]] = [
             TextBlock(text=f"[{self._user_name}] says: \n{self._question}"),
         ]
         user_blocks.extend([ImageBlock(url=url) for url in image_urls])
         user_msg = ChatMessage(role=MessageRole.USER, blocks=user_blocks)
+
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
+            *past_history,
             user_msg
         ]
 
@@ -208,6 +218,11 @@ class OCFAgentWorkflow(Workflow):
 
         if self._message_callback:
             await self._message_callback(final_display[:2000])
+
+        # Update persistent memory blocks with this interaction
+        if self.memory and not self._cancelled:
+            self.memory.put(ChatMessage(role=MessageRole.USER, content=self._question))
+            self.memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=full_content))
 
         return StopEvent(result=ResponseCompleteEvent(
             final_text=final_display,

@@ -30,6 +30,7 @@ from database import (
     setup_llm,
     get_index,
     update_index,
+    get_user_memory,
 )
 from llm import get_llm
 from prompts import (
@@ -171,6 +172,9 @@ async def process_query(
 
     async with ctx.typing():
         try:
+            # Get persistent memory for this user
+            memory = get_user_memory(user_id, llm_standard)
+
             # Create a fresh workflow instance for this query
             workflow = OCFAgentWorkflow(
                 llm_standard=llm_standard,
@@ -178,6 +182,7 @@ async def process_query(
                 index=bot.index,
                 timeout=300.0,
                 depth=0,
+                memory=memory,
             )
 
             # Store reference to workflow for cancellation
