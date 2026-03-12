@@ -110,15 +110,17 @@ class OCFAgentWorkflow(Workflow):
 
         # Construct multimodal message if images are provided
         if image_urls:
-            user_content = [{"type": "text", "text": f"[{self._user_name}] says: \n{self._question}"}]
+            user_blocks = [{"block_type": "text", "text": f"[{self._user_name}] says: \n{self._question}"}]
             for url in image_urls:
-                user_content.append({"type": "image_url", "image_url": {"url": url}})
+                user_blocks.append({"block_type": "image", "url": url})
+            
+            user_msg = ChatMessage(role=MessageRole.USER, blocks=user_blocks)
         else:
-            user_content = f"[{self._user_name}] says: \n{self._question}"
+            user_msg = ChatMessage(role=MessageRole.USER, content=f"[{self._user_name}] says: \n{self._question}")
 
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
-            ChatMessage(role=MessageRole.USER, content=user_content)
+            user_msg
         ]
 
         if self._message_callback:
