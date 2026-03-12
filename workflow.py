@@ -101,15 +101,24 @@ class OCFAgentWorkflow(Workflow):
         self._persona_prompt = ev.get("persona_prompt", "")
         self._use_thinking = ev.get("use_thinking", False)
         self._message_callback = ev.get("message_callback")
+        image_urls = ev.get("image_urls", [])
         self._cancelled = False
         self._loop_count = 0
 
         # Construct the system persona including tool instructions
         system_content = self._persona_prompt.format(query_str=self._question) + "\n\n" + get_tool_prompt(self._question, use_thinking=self._use_thinking)
 
+        # Construct multimodal message if images are provided
+        if image_urls:
+            user_content = [{"type": "text", "text": f"[{self._user_name}] says: \n{self._question}"}]
+            for url in image_urls:
+                user_content.append({"type": "image_url", "image_url": {"url": url}})
+        else:
+            user_content = f"[{self._user_name}] says: \n{self._question}"
+
         self._chat_history = [
             ChatMessage(role=MessageRole.SYSTEM, content=system_content),
-            ChatMessage(role=MessageRole.USER, content=f"[{self._user_name}] says: \n{self._question}")
+            ChatMessage(role=MessageRole.USER, content=user_content)
         ]
 
         if self._message_callback:
@@ -255,6 +264,7 @@ async def run_query_workflow(
     user_name: str,
     persona_prompt: str,
     use_thinking: bool,
+    image_urls: Optional[List[str]] = None,
     message_callback: Optional[MessageCallback] = None,
 ) -> ResponseCompleteEvent:
     """Convenience function to run a query through the workflow."""
@@ -263,5 +273,6 @@ async def run_query_workflow(
         user_name=user_name,
         persona_prompt=persona_prompt,
         use_thinking=use_thinking,
+        image_urls=image_urls,
         message_callback=message_callback,
     )

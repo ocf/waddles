@@ -9,8 +9,10 @@ import time
 import asyncio
 import textwrap
 import traceback
+import base64
+import mimetypes
 from contextlib import redirect_stdout
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 import discord
 from discord.ext import commands, tasks
@@ -104,22 +106,42 @@ bot = OCFBot()
 
 
 # --- 3. CORE QUERY PROCESSING ---
+async def get_attachment_data_url(attachment: discord.Attachment) -> Optional[str]:
+    """Downloads a Discord attachment and converts it to a base64 data URL."""
+    if not attachment.content_type or not attachment.content_type.startswith("image/"):
+        return None
+    
+    try:
+        data = await attachment.read()
+        base64_data = base64.b64encode(data).decode("utf-8")
+        return f"data:{attachment.content_type};base64,{base64_data}"
+    except Exception as e:
+        print(f"Error processing attachment {attachment.filename}: {e}")
+        return None
+
 async def process_query(
     ctx: commands.Context,
-    question: str,
+    question: Optional[str],
     prompt_template_str: str,
-    use_thinking: bool
+    use_thinking: bool,
+    attachments: Optional[List[discord.Attachment]] = None
 ) -> None:
     """Process a query using the workflow system.
 
     Args:
         ctx: The Discord command context.
-        question: The user's question.
+        question: The user's question (can be None if image provided).
         prompt_template_str: The persona prompt template.
         use_thinking: Whether to use thinking mode.
+        attachments: List of Discord attachments.
     """
     if not bot.index:
         await ctx.reply("I'm still warming up my brain, try again in a sec!")
+        return
+
+    # If both question and attachments are empty, complain
+    if not question and (not attachments or len(attachments) == 0):
+        await ctx.reply("You need to provide a question or an image!")
         return
 
     user_id = ctx.author.id
@@ -138,8 +160,13 @@ async def process_query(
         except discord.HTTPException:
             pass  # Ignore rate limits and other HTTP errors
 
-    # Create workflow context for this specific query
-    workflow_ctx = None
+    # Resolve attachments to image URLs
+    image_urls = []
+    if attachments:
+        for attachment in attachments:
+            data_url = await get_attachment_data_url(attachment)
+            if data_url:
+                image_urls.append(data_url)
 
     async with ctx.typing():
         try:
@@ -157,10 +184,11 @@ async def process_query(
 
             # Run the workflow
             result = await workflow.run(
-                question=question,
+                question=question or "Describe this image." if image_urls else question,
                 user_name=ctx.author.name,
                 persona_prompt=prompt_template_str,
                 use_thinking=use_thinking,
+                image_urls=image_urls,
                 message_callback=message_callback,
             )
 
@@ -200,23 +228,23 @@ async def ping(ctx):
 
 @bot.command(name="ask")
 @commands.guild_only()
-async def ask(ctx, *, question: str):
+async def ask(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using your default persona."""
     persona_name = get_user_default_persona(ctx.author.id)
     prompt_str = get_persona_prompt(persona_name)
-    await process_query(ctx, question, prompt_str, use_thinking=False)
+    await process_query(ctx, question, prompt_str, use_thinking=False, attachments=ctx.message.attachments)
 
 @bot.command(name="think")
 @commands.guild_only()
-async def think(ctx, *, question: str):
+async def think(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using thinking mode and your default persona."""
     persona_name = get_user_default_persona(ctx.author.id)
     prompt_str = get_persona_prompt(persona_name)
-    await process_query(ctx, question, prompt_str, use_thinking=True)
+    await process_query(ctx, question, prompt_str, use_thinking=True, attachments=ctx.message.attachments)
 
 @bot.command(name="askas")
 @commands.guild_only()
-async def askas(ctx, name: str, *, question: str):
+async def askas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question normally."""
     name = name.lower()
     if not is_valid_persona_name(name):
@@ -226,11 +254,11 @@ async def askas(ctx, name: str, *, question: str):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     prompt = get_persona_prompt(name)
-    await process_query(ctx, question, prompt, use_thinking=False)
+    await process_query(ctx, question, prompt, use_thinking=False, attachments=ctx.message.attachments)
 
 @bot.command(name="thinkas")
 @commands.guild_only()
-async def thinkas(ctx, name: str, *, question: str):
+async def thinkas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question using thinking mode."""
     name = name.lower()
     if not is_valid_persona_name(name):
@@ -240,7 +268,7 @@ async def thinkas(ctx, name: str, *, question: str):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     prompt = get_persona_prompt(name)
-    await process_query(ctx, question, prompt, use_thinking=True)
+    await process_query(ctx, question, prompt, use_thinking=True, attachments=ctx.message.attachments)
 
 @bot.command(name="stop")
 @commands.guild_only()
