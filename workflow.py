@@ -115,7 +115,7 @@ class OCFAgentWorkflow(Workflow):
         past_history = []
         if self.memory:
             # For multimodal queries, we only search memory with the text part
-            past_history = self.memory.get(input=self._question)
+            past_history = await self.memory.aget(input=self._question)
 
         # Construct multimodal message if images are provided
         user_blocks: List[Union[TextBlock, ImageBlock]] = [
@@ -221,8 +221,8 @@ class OCFAgentWorkflow(Workflow):
 
         # Update persistent memory blocks with this interaction
         if self.memory and not self._cancelled:
-            self.memory.put(ChatMessage(role=MessageRole.USER, content=self._question))
-            self.memory.put(ChatMessage(role=MessageRole.ASSISTANT, content=full_content))
+            await self.memory.aput(ChatMessage(role=MessageRole.USER, content=self._question))
+            await self.memory.aput(ChatMessage(role=MessageRole.ASSISTANT, content=full_content))
 
         return StopEvent(result=ResponseCompleteEvent(
             final_text=final_display,
