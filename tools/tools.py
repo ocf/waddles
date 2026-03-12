@@ -21,7 +21,7 @@ def get_tool_prompt(question: str) -> str:
     """
     return (
         "You must decide what information to search for or what actions to take to answer the user's question. "
-        "Call 'search_web' for general internet facts, current events, and news. "
+        "Call 'search_web' for general internet facts, current events, and news. You can use the 'page' parameter to see more results. "
         "Call 'scrape_url' to read the content of a specific webpage if you are given a URL or need to extract text from an external link. "
         "Call 'delegate_task' for complex, multi-step research, processing large amounts of text, or exploring many links at once. This runs a specialized sub-agent to handle the heavy lifting. "
         "Call 'search_docs' for internal OCF rules, services, policies, or any OCF-related question. "
