@@ -30,6 +30,7 @@ from config import (
     EMBEDDING_NAME,
     DOCS_DIR,
     STORAGE_DIR,
+    MEMORY_DIR,
     SYNC_SCRIPT,
     EMBED_BATCH_SIZE,
     CHUNK_SIZE,
@@ -222,7 +223,7 @@ def get_user_memory(user_id: int, llm: OpenAILike) -> Memory:
     Returns:
         A Memory instance for the user.
     """
-    db = chromadb.PersistentClient(path=STORAGE_DIR)
+    db = chromadb.PersistentClient(path=MEMORY_DIR)
     # Unique collection name per user for long-term vector memory
     collection_name = f"user_memory_{user_id}"
     chroma_collection = db.get_or_create_collection(collection_name)

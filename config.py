@@ -24,11 +24,13 @@ STORAGE_DIR = "/app/storage"
 DATA_DIR = "/app/data"
 PERSONA_DIR = f"{DATA_DIR}/persona"
 SETTINGS_DIR = f"{DATA_DIR}/settings"
+MEMORY_DIR = f"{DATA_DIR}/memory"
 SYNC_SCRIPT = "/app/sync.sh"
 
 # Ensure directories exist
 os.makedirs(PERSONA_DIR, exist_ok=True)
 os.makedirs(SETTINGS_DIR, exist_ok=True)
+os.makedirs(MEMORY_DIR, exist_ok=True)
 
 # --- LLM Configuration ---
 LLM_CONTEXT_WINDOW = 32768
@@ -56,5 +58,5 @@ WEB_SCRAPE_MAX_LEN = 10000
 MEMORY_MAX_FACTS = 20
 MEMORY_TOKEN_LIMIT = 4000
 MEMORY_CHAT_HISTORY_TOKEN_RATIO = 0.7
-MEMORY_DB_PATH = os.path.join(STORAGE_DIR, "user_memory.db")
+MEMORY_DB_PATH = os.path.join(MEMORY_DIR, "memory.db")
 MEMORY_DB_URI = f"sqlite+aiosqlite:///{MEMORY_DB_PATH}"
