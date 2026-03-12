@@ -44,15 +44,17 @@ class OCFAgentWorkflow(Workflow):
         index: VectorStoreIndex,
         timeout: float = 300.0,
         verbose: bool = False,
+        depth: int = 0,
     ):
         """Initialize the workflow."""
         super().__init__(timeout=timeout, verbose=verbose)
         self.llm_standard = llm_standard
         self.llm_thinking = llm_thinking
         self.index = index
+        self.depth = depth
 
         # Create tools
-        self.tool_map = get_all_tools(index)
+        self.tool_map = get_all_tools(index, depth=depth)
         self.tools = list(self.tool_map.values())
 
         # Per-run state

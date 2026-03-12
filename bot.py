@@ -83,6 +83,7 @@ class OCFBot(commands.Bot):
             llm_thinking=llm_thinking,
             index=self.index,
             timeout=300.0,
+            depth=0,
         )
 
     @tasks.loop(hours=1.0)
@@ -148,6 +149,7 @@ async def process_query(
                 llm_thinking=llm_thinking,
                 index=bot.index,
                 timeout=300.0,
+                depth=0,
             )
 
             # Store reference to workflow for cancellation
