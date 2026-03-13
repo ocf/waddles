@@ -6,11 +6,14 @@ import os
 TOKEN = os.getenv("DISCORD_TOKEN")
 PREFIX = "?"
 
-OWNER_USERS_STR = os.getenv("OWNER_USERS", "")
-OWNER_IDS = {int(x.strip()) for x in OWNER_USERS_STR.split(",") if x.strip().isdigit()}
+OWNER_IDS = set([
+    446290930723717120,
+    1023113941624295434,
+    330550318305640458,
+])
 
 # Provide a fallback just in case it's missing in .env
-ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", "735620451295821906"))
+ADMIN_ROLE_ID = 735620451295821906
 
 # --- LLM Settings ---
 OLLAMA_URL = "http://127.0.0.1:11434"
