@@ -2,6 +2,7 @@ from llama_index.llms.openai_like import OpenAILike
 from config import (
     LLM_REPETITION_PENALTY,
     SGLANG_URL,
+    MODEL_NAME,
     LLM_CONTEXT_WINDOW,
     LLM_TIMEOUT,
     LLM_TEMPERATURE,
@@ -21,7 +22,7 @@ def get_llm(thinking: bool) -> OpenAILike:
         Configured OpenAILike LLM instance.
     """
     return OpenAILike(
-        model="Qwen/Qwen3.5-35B-A3B-GPTQ-Int4",
+        model=MODEL_NAME,
         api_base=SGLANG_URL,
         api_key="fake-key",
         context_window=LLM_CONTEXT_WINDOW,
