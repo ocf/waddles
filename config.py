@@ -15,7 +15,7 @@ ADMIN_ROLE_ID = int(os.getenv("ADMIN_ROLE_ID", "735620451295821906"))
 # --- LLM Settings ---
 OLLAMA_URL = "http://127.0.0.1:11434"
 SGLANG_URL = "http://127.0.0.1:30000/v1"
-MODEL_NAME = "codgician/Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-GPTQ-int4"
+MODEL_NAME = "llmfan46/Qwen3.5-35B-A3B-heretic-v2"
 EMBEDDING_NAME = "qwen3-embedding:8b"
 
 # --- Paths ---
