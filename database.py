@@ -86,7 +86,7 @@ def setup_llm(llm: OpenAILike) -> None:
         base_url=OLLAMA_URL,
         keep_alive=-
         1,
-        query_instruction="Instruct: Given a Discord user's question, retrieve relevant OCF documentation passages that answer the query\nQuery: ",
+        query_instruction="Instruct: Retrieve relevant documentation passages that answer the query\nQuery: ",
         text_instruction="",
     )
     Settings.embed_batch_size = EMBED_BATCH_SIZE  # type: ignore[attr-defined]
