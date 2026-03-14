@@ -215,10 +215,19 @@ async def process_query(
                     role = str(getattr(chat_msg.role, 'value', chat_msg.role)).upper()
 
                     # Extract text content (handling both standard content and multimodal blocks)
-                    content = chat_msg.content
+                    content = chat_msg.content or ""
                     if not content and getattr(chat_msg, 'blocks', None):
                         content = "\n".join([b.text for b in chat_msg.blocks if hasattr(b, 'text')])
-                    if not content:
+
+                    # Extract thinking text if it exists
+                    thinking_text = ""
+                    if hasattr(chat_msg, "additional_kwargs") and chat_msg.additional_kwargs:
+                        thinking_text = chat_msg.additional_kwargs.get("thinking_text", "")
+
+                    if thinking_text:
+                        content = f"<think>\n{thinking_text}\n</think>\n\n{content}"
+
+                    if not content.strip():
                         content = "[Image or Non-text content]"
 
                     history_text += f"=== {role} ===\n{content}\n\n"

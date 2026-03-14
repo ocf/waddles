@@ -199,8 +199,12 @@ class OCFAgentWorkflow(Workflow):
         tool_calls = self._parse_qwen_tools(full_content)
 
         # Store assistant response in history
+        kwargs = {"thinking_text": thinking_text} if thinking_text else {}
         self._chat_history.append(ChatMessage(
-            role=MessageRole.ASSISTANT, content=full_content))
+            role=MessageRole.ASSISTANT,
+            content=full_content,
+            additional_kwargs=kwargs,
+        ))
 
         if tool_calls and not self._cancelled:
             return ToolDecisionEvent(
