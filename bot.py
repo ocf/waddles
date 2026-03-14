@@ -72,6 +72,8 @@ class OCFBot(commands.Bot):
         self.active_workflows: Dict[int, Dict[int, Any]] = {}
         # For eval command
         self._last_result: Any = None
+        # For debug command
+        self._debug: bool = False
 
     async def setup_hook(self):
         """Initialize the index and workflow on bot startup."""
@@ -205,6 +207,28 @@ async def process_query(
                 final_text = str(result) if result else "I couldn't generate a response."
 
             await msg.edit(content=final_text[:2000])
+
+            if bot._debug is True:
+                history_text = ""
+                for chat_msg in workflow._chat_history:
+                    # Extract role name safely
+                    role = str(getattr(chat_msg.role, 'value', chat_msg.role)).upper()
+
+                    # Extract text content (handling both standard content and multimodal blocks)
+                    content = chat_msg.content
+                    if not content and getattr(chat_msg, 'blocks', None):
+                        content = "\n".join([b.text for b in chat_msg.blocks if hasattr(b, 'text')])
+                    if not content:
+                        content = "[Image or Non-text content]"
+
+                    history_text += f"=== {role} ===\n{content}\n\n"
+
+                # Create an in-memory file for Discord
+                file_bytes = io.BytesIO(history_text.encode('utf-8'))
+                discord_file = discord.File(file_bytes, filename=f"chat_history_{query_id}.txt")
+
+                # Send the file into the channel
+                await ctx.send("Here is the full workflow chat history:", file=discord_file)
 
         except Exception as e:
             await msg.edit(content=f"My circuits fried trying to answer that: {e}")
@@ -438,6 +462,15 @@ async def reloadfull(ctx):
         await msg.edit(content="✅ Successfully synced and smartly updated the index!")
     except Exception as e:
         await msg.edit(content=f"❌ Failed to sync or update: {e}")
+
+
+@bot.command(name="debug", hidden=True)
+@commands.guild_only()
+@commands.is_owner()
+async def debug(ctx):
+    """Toggles debug mode, which sends the full workflow chat history after each query."""
+    bot._debug = not bot._debug
+    await ctx.reply(f"🐛 Debug mode is now {'ON' if bot._debug else 'OFF'}.")
 
 
 @bot.command(name="eval", hidden=True)
