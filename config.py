@@ -51,7 +51,7 @@ CHUNK_OVERLAP = 100
 
 # --- Tool Configuration ---
 DOCS_RETRIEVE_CHUNKS = 5  # 25
-DOCS_TOP_N = 5  # 10 (note: currently same as not reranking)
+DOCS_TOP_N = 5  # 10
 DOCS_RECENCY_WEIGHT = 0.3
 WEB_SEARCH_MAX_RESULTS = 3
 WEB_SCRAPE_MAX_LINKS = 20

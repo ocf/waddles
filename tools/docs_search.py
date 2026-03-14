@@ -6,7 +6,7 @@ from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.tools import FunctionTool
 
-from config import DOCS_RECENCY_WEIGHT, DOCS_RETRIEVE_CHUNKS, DOCS_TOP_N
+from config import DOCS_DIR, DOCS_RECENCY_WEIGHT, DOCS_RETRIEVE_CHUNKS, DOCS_TOP_N
 
 
 class RecencyReranker(BaseNodePostprocessor):
@@ -76,14 +76,18 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
             retriever = index.as_retriever(similarity_top_k=DOCS_RETRIEVE_CHUNKS)
             nodes = await retriever.aretrieve(query)
 
-            if not nodes:
-                return "No internal documentation found."
+            # if not nodes:
+            #     return "No internal documentation found."
 
-            # Rerank nodes based on recency
-            reranker = RecencyReranker(top_n=DOCS_TOP_N, recency_weight=DOCS_RECENCY_WEIGHT)
-            nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
+            # # Rerank nodes based on recency
+            # reranker = RecencyReranker(top_n=DOCS_TOP_N, recency_weight=DOCS_RECENCY_WEIGHT)
+            # nodes = reranker.postprocess_nodes(nodes, query_bundle=QueryBundle(query))
 
-            return "\n---------------------\n".join([n.get_content() for n in nodes])
+            return "\n---------------------\n".join([
+                f"Source: {n.metadata.get('file_path', 'Unknown').removeprefix(DOCS_DIR).lstrip('/')}\n"
+                f"Content: {n.get_content()}"
+                for n in nodes
+            ])
         except Exception as e:
             return f"Documentation search error: {e}"
 
