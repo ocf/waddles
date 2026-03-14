@@ -6,7 +6,7 @@ from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.schema import NodeWithScore
 from llama_index.core.tools import FunctionTool
 
-from config import DOCS_RECENCY_WEIGHT, DOCS_RETRIEVE_CHUNKS, DOCS_TOP_N, RERANK_TOP_N
+from config import DOCS_RECENCY_WEIGHT, DOCS_RETRIEVE_CHUNKS, DOCS_TOP_N
 
 
 class RecencyReranker(BaseNodePostprocessor):

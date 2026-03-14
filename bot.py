@@ -225,7 +225,7 @@ async def process_query(
                         thinking_text = chat_msg.additional_kwargs.get("thinking_text", "")
 
                     if thinking_text:
-                        content = f"<think>\n{thinking_text}\n</think>\n\n{content}"
+                        content = f"<think>\n{thinking_text}\n</think>{content}"
 
                     if not content.strip():
                         content = "[Image or Non-text content]"
