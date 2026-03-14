@@ -85,6 +85,7 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
 
             return "\n---------------------\n".join([
                 f"Source: {n.metadata.get('file_path', 'Unknown').removeprefix(DOCS_DIR).lstrip('/')}\n"
+                f"Last modified: {n.metadata.get('last_modified_date', 'Unknown')}\n"
                 f"Content: {n.get_content()}"
                 for n in nodes
             ])
