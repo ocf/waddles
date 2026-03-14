@@ -108,8 +108,8 @@ class OCFAgentWorkflow(Workflow):
         self._loop_count = 0
 
         # Construct the system persona including tool instructions
-        system_content = self._persona_prompt.format(
-            query_str=self._question) + "\n\n" + get_tool_prompt(self._question, use_thinking=self._use_thinking)
+        system_content = self._persona_prompt + "\n\n"
+        system_content += get_tool_prompt(self._user_name, self._use_thinking)
 
         # Retrieve relevant past history from memory blocks
         past_history = []
@@ -118,9 +118,7 @@ class OCFAgentWorkflow(Workflow):
             past_history = await self.memory.aget(input=self._question)
 
         # Construct multimodal message if images are provided
-        user_blocks: List[Union[TextBlock, ImageBlock]] = [
-            TextBlock(text=f"[{self._user_name}] says: \n{self._question}"),
-        ]
+        user_blocks: List[Union[TextBlock, ImageBlock]] = [TextBlock(text=self._question)]
         user_blocks.extend([ImageBlock(url=url) for url in image_urls])
         user_msg = ChatMessage(role=MessageRole.USER, blocks=user_blocks)
 

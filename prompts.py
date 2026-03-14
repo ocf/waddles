@@ -20,23 +20,6 @@ def is_valid_persona_name(name: str) -> bool:
     return bool(re.match(r"^[a-z0-9]+$", name))
 
 
-def format_persona_prompt(base_prompt: str) -> str:
-    """Ensures a persona prompt has the required template variables.
-
-    Args:
-        base_prompt: The base prompt text.
-
-    Returns:
-        The formatted prompt with query_str placeholder.
-    """
-    if "{query_str}" not in base_prompt:
-        return (
-            f"{base_prompt}\n\n"
-            "Query: {query_str}\nAnswer: "
-        )
-    return base_prompt
-
-
 def get_user_default_persona(user_id: int) -> str:
     """Fetches the user's default persona name.
 
@@ -94,12 +77,12 @@ def get_persona_prompt(persona_name: str) -> str:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return format_persona_prompt(data["prompt"])
+            return data["prompt"]
         except Exception:
             pass
 
     # Bare minimum fallback just in case the default.json is deleted or corrupted
-    return "Query: {query_str}\nAnswer: "
+    return "You are a helpful assistant."
 
 
 def persona_exists(name: str) -> bool:
