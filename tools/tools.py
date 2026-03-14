@@ -29,8 +29,7 @@ def get_tool_prompt(question: str, use_thinking: bool = False) -> str:
         "Call 'get_ocf_user_info' if the user asks for details or printing quotas for a specific OCF username. "
         "Call 'run_python' if you need to perform complex math calculations, manipulate data, or run custom logic. "
         "You should call as many tools as necessary to fully address the user's question. "
-        "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first. "
-    )
+        "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first. ")
 
     if use_thinking:
         prompt += ("\n\nCRITICAL: You are in 'Thinking Mode'. Before making ANY tool calls, you MUST use your thinking space to:\n"
