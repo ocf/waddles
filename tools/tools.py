@@ -1,5 +1,7 @@
 """Function tools for the OCF Agent Workflow."""
 
+from datetime import datetime
+
 from llama_index.core import VectorStoreIndex
 
 from tools.docs_search import create_docs_search_tool
@@ -10,7 +12,7 @@ from tools.web_scrape import create_web_scrape_tool
 from tools.delegate import create_delegation_tool
 
 
-def get_tool_prompt(user_name: str = "", use_thinking: bool = False) -> str:
+def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> str:
     """Generate the prompt for deciding which tools to use.
 
     Args:
@@ -38,8 +40,8 @@ def get_tool_prompt(user_name: str = "", use_thinking: bool = False) -> str:
                    "3. If a tool call reveals new information (like a URL or a specific service), stop and re-evaluate your plan in the next thinking step before proceeding.\n"
                    "4. Only provide a final answer once you have gathered all necessary context or exhausted your options.")
 
-    if user_name:
-        prompt += f"\n\nThe user's username is {user_name}."
+    date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    prompt += f"\n\nBy the way, the user's username is {user_name} and the user is in Berkeley. The current date and time is {date}."
 
     return prompt
 
