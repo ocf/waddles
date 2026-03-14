@@ -182,7 +182,7 @@ async def process_query(
                 index=bot.index,
                 timeout=300.0,
                 depth=0,
-                memory=memory,
+                memory=None, #memory,
             )
 
             # Store reference to workflow for cancellation

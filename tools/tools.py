@@ -26,7 +26,7 @@ def get_tool_prompt(question: str, use_thinking: bool = False) -> str:
         "Call 'scrape_url' to read the content of a specific webpage if you are given a URL or need to extract text from an external link. "
         "Call 'delegate_task' for complex, multi-step research, processing large amounts of text, or exploring many links at once. This runs a specialized sub-agent to handle the heavy lifting. "
         "Call 'search_docs' for internal OCF rules, services, policies, or any OCF-related question. "
-        # "Call 'get_ocf_user_info' if the user asks for details or printing quotas for a specific OCF username. "
+        "Call 'get_ocf_user_info' if the user asks for details or printing quotas for a specific OCF username. "
         "Call 'run_python' if you need to perform complex math calculations, manipulate data, or run custom logic. "
         "You should call as many tools as necessary to fully address the user's question. "
         "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first. "
@@ -58,7 +58,7 @@ def get_all_tools(index: VectorStoreIndex, depth: int = 0) -> dict:
         "search_web": create_web_search_tool(),
         "scrape_url": create_web_scrape_tool(),
         "search_docs": create_docs_search_tool(index),
-        # "get_ocf_user_info": create_user_info_tool(),
+        "get_ocf_user_info": create_user_info_tool(),
         "run_python": create_python_run_tool(),
     }
 
