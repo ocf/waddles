@@ -29,7 +29,7 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
             nodes = await retriever.aretrieve(query)
 
             if not nodes:
-                 return "No internal documentation found."
+                return "No internal documentation found."
 
             return "\n---------------------\n".join([
                 f"Source: {n.metadata.get('file_path', 'Unknown').removeprefix(DOCS_DIR).lstrip('/')}\n"
