@@ -1,8 +1,7 @@
 """Index management for ChromaDB and document embedding."""
 
-import os
 import subprocess
-from typing import List, cast
+from typing import List, Sequence, cast
 import chromadb
 from bs4 import BeautifulSoup
 
@@ -19,8 +18,10 @@ from llama_index.core import (
     load_index_from_storage,
     Document,
 )
-from llama_index.core.schema import TextNode
+from llama_index.core.schema import TextNode, BaseNode
 from llama_index.core.readers.base import BaseReader
+from llama_index.core.node_parser.interface import NodeParser
+from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.llms.openai_like import OpenAILike
 from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -92,6 +93,7 @@ def setup_llm(llm: OpenAILike) -> None:
     Settings.embed_batch_size = EMBED_BATCH_SIZE  # type: ignore[attr-defined]
     Settings.chunk_size = CHUNK_SIZE
     Settings.chunk_overlap = CHUNK_OVERLAP
+    Settings.node_parser = HybridNodeParser()
 
 
 def _clean_document_metadata(documents: list[Document]) -> None:
@@ -141,6 +143,24 @@ def _load_documents() -> list[Document]:
     documents = reader.load_data(show_progress=True)
     _clean_document_metadata(documents)
     return documents
+
+
+class HybridNodeParser(NodeParser):
+    """A custom NodeParser that uses MarkdownNodeParser for .md files and SentenceSplitter for others."""
+
+    def _parse_nodes(self, nodes: Sequence[BaseNode], show_progress: bool = False, **kwargs) -> List[BaseNode]:
+        md_parser = MarkdownNodeParser()
+        default_parser = SentenceSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
+
+        md_nodes = [n for n in nodes if n.metadata.get("file_path", "").endswith(".md")]
+        other_nodes = [n for n in nodes if not n.metadata.get("file_path", "").endswith(".md")]
+
+        result = []
+        if md_nodes:
+            result.extend(md_parser(md_nodes))
+        if other_nodes:
+            result.extend(default_parser(other_nodes))
+        return result
 
 
 def get_index() -> VectorStoreIndex:
