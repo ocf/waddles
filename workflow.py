@@ -149,8 +149,7 @@ class OCFAgentWorkflow(Workflow):
         display_text = ""
         last_edit_time = time.time()
 
-        # Assemble streaming tool call fragments
-        streaming_tool_calls = {}
+        latest_tool_calls = []
 
         async for chunk in response_stream:
             if self._cancelled:
@@ -158,44 +157,21 @@ class OCFAgentWorkflow(Workflow):
                     await response_stream.aclose()
                 break
 
-            # 1. Accumulate Thinking text
+            # 1. Accumulate Thinking text (from raw deltas)
             think_delta = chunk.additional_kwargs.get("thinking_delta", "")
             if think_delta:
                 thinking_text += think_delta
 
-            # 2. Accumulate Regular text
+            # 2. Accumulate Regular text (from raw deltas)
             if chunk.delta:
                 full_content += chunk.delta
 
-            # 3. Accumulate Tool Calls (using the fixed parser we just made)
-            tool_call_deltas = chunk.additional_kwargs.get("tool_calls") or []
-            for tc in tool_call_deltas:
-                if isinstance(tc, dict):
-                    idx = tc.get("index", 0)
-                    tc_id = tc.get("id")
-                    fn_name = tc.get("function", {}).get("name", "")
-                    fn_args = tc.get("function", {}).get("arguments", "")
-                else:
-                    idx = getattr(tc, "index", 0)
-                    tc_id = getattr(tc, "id", None)
-                    fn_name = getattr(tc.function, "name", "") if hasattr(tc, "function") else ""
-                    fn_args = getattr(tc.function, "arguments", "") if hasattr(tc, "function") else ""
+            # 3. Capture the LATEST accumulated tool calls
+            # LlamaIndex safely builds these inside the chunk.message!
+            if hasattr(chunk, "message") and chunk.message.additional_kwargs.get("tool_calls"):
+                latest_tool_calls = chunk.message.additional_kwargs.get("tool_calls")
 
-                if idx not in streaming_tool_calls:
-                    streaming_tool_calls[idx] = {
-                        "id": tc_id or f"call_{idx}",
-                        "name": fn_name,
-                        "arguments": fn_args
-                    }
-                else:
-                    if tc_id:
-                        streaming_tool_calls[idx]["id"] = tc_id
-                    if fn_name:
-                        streaming_tool_calls[idx]["name"] += fn_name
-                    if fn_args:
-                        streaming_tool_calls[idx]["arguments"] += fn_args
-
-            # NEW: 4. Dynamically build the Discord message
+            # 4. Dynamically build the Discord message
             display_parts = []
 
             if thinking_text:
@@ -205,13 +181,19 @@ class OCFAgentWorkflow(Workflow):
             if full_content:
                 display_parts.append(full_content)
 
-            if streaming_tool_calls:
+            if latest_tool_calls:
                 tool_text = "🛠️ **Preparing Tools:**\n"
-                for tc in streaming_tool_calls.values():
-                    name = tc.get("name", "...")
-                    # Clean up arguments so they stay on one line and don't flood the chat
-                    args = tc.get("arguments", "")
-                    clean_args = args.replace('\n', '').replace('  ', ' ')
+                for tc in latest_tool_calls:
+                    # Safely handle LlamaIndex dicts or objects
+                    if isinstance(tc, dict):
+                        name = tc.get("function", {}).get("name", "...")
+                        args = tc.get("function", {}).get("arguments", "")
+                    else:
+                        func_obj = getattr(tc, "function", None)
+                        name = getattr(func_obj, "name", "...") if func_obj else "..."
+                        args = getattr(func_obj, "arguments", "") if func_obj else ""
+
+                    clean_args = args.replace('\n', '').replace('  ', ' ') if args else ""
                     if len(clean_args) > 60:
                         clean_args = clean_args[:57] + "..."
                     tool_text += f"- `{name}({clean_args})`\n"
@@ -226,29 +208,41 @@ class OCFAgentWorkflow(Workflow):
                     await self._message_callback(display_text[:2000])
                     last_edit_time = now
 
-        # Parse the assembled JSON tool calls
+        # --- Stream Complete: Parse the final tool calls ---
         tool_calls = []
         openai_history_tools = []
-        for tc in streaming_tool_calls.values():
+
+        for tc in latest_tool_calls:
             try:
-                safe_args = tc["arguments"] if tc["arguments"].strip() else "{}"
+                if isinstance(tc, dict):
+                    tc_id = tc.get("id")
+                    fn_name = tc.get("function", {}).get("name")
+                    fn_args = tc.get("function", {}).get("arguments", "{}")
+                else:
+                    tc_id = getattr(tc, "id", None)
+                    func_obj = getattr(tc, "function", None)
+                    fn_name = getattr(func_obj, "name", "") if func_obj else ""
+                    fn_args = getattr(func_obj, "arguments", "{}") if func_obj else "{}"
+
+                safe_args = fn_args if fn_args and fn_args.strip() else "{}"
 
                 tool_calls.append({
-                    "id": tc["id"],
-                    "name": tc["name"],
+                    "id": tc_id,
+                    "name": fn_name,
                     "kwargs": json.loads(safe_args)
                 })
+
                 # Format required for standard OpenAI assistant history
                 openai_history_tools.append({
-                    "id": tc["id"],
+                    "id": tc_id,
                     "type": "function",
                     "function": {
-                        "name": tc["name"],
-                        "arguments": tc["arguments"]
+                        "name": fn_name,
+                        "arguments": fn_args
                     }
                 })
             except Exception as e:
-                print(f"Warning: Failed to parse tool call {tc['name']}: {e}")
+                print(f"Warning: Failed to parse tool call {fn_name}: {e}")
 
         # Store assistant response in history
         kwargs = {}

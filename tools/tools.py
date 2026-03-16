@@ -1,6 +1,7 @@
 """Function tools for the OCF Agent Workflow."""
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from llama_index.core import VectorStoreIndex
 
@@ -40,7 +41,7 @@ def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> s
                    "3. If a tool call reveals new information (like a URL or a specific service), stop and re-evaluate your plan in the next thinking step before proceeding.\n"
                    "4. Only provide a final answer once you have gathered all necessary context or exhausted your options.")
 
-    date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    date = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
     prompt += f"\n\nBy the way, the user's username is {user_name} and the user is in Berkeley. The current date and time is {date}."
 
     return prompt
