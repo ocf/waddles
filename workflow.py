@@ -114,7 +114,7 @@ class OCFAgentWorkflow(Workflow):
         # NEW: Properly append individual tool results to satisfy OpenAI schema
         for tool_res in ev.tool_results:
             self._chat_history.append(ChatMessage(
-                role=MessageRole.TOOL, 
+                role=MessageRole.TOOL,
                 content=str(tool_res["content"]),
                 additional_kwargs={
                     "tool_call_id": tool_res["id"],
@@ -148,7 +148,7 @@ class OCFAgentWorkflow(Workflow):
         full_content = ""
         display_text = ""
         last_edit_time = time.time()
-        
+
         # Assemble streaming tool call fragments
         streaming_tool_calls = {}
 
