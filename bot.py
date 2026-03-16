@@ -219,18 +219,30 @@ async def process_query(
                     if not content and getattr(chat_msg, 'blocks', None):
                         content = "\n".join([b.text for b in chat_msg.blocks if hasattr(b, 'text')])
 
-                    # Extract thinking text if it exists
-                    thinking_text = ""
-                    if hasattr(chat_msg, "additional_kwargs") and chat_msg.additional_kwargs:
-                        thinking_text = chat_msg.additional_kwargs.get("thinking_text", "")
+                    # Extract additional kwargs safely
+                    kwargs = getattr(chat_msg, "additional_kwargs", {}) or {}
 
+                    # Extract thinking text if it exists
+                    thinking_text = kwargs.get("thinking_text", "")
                     if thinking_text:
-                        content = f"<think>\n{thinking_text}\n</think>{content}"
+                        content = f"<think>\n{thinking_text}\n</think>\n{content}"
+
+                    # NEW: Extract and format Tool Calls made by the Assistant
+                    tool_calls = kwargs.get("tool_calls", [])
+                    if tool_calls:
+                        for tc in tool_calls:
+                            fn_name = tc.get("function", {}).get("name", "unknown")
+                            fn_args = tc.get("function", {}).get("arguments", "{}")
+                            content += f"\n🛠️ [TOOL CALL] {fn_name}({fn_args})"
+
+                    # NEW: Clearly label Tool Responses
+                    if role == "TOOL" and kwargs.get("name"):
+                        content = f"📦 [TOOL RESULT FOR '{kwargs.get('name')}']\n{content}"
 
                     if not content.strip():
                         content = "[Image or Non-text content]"
 
-                    history_text += f"=== {role} ===\n{content}\n\n"
+                    history_text += f"=== {role} ===\n{content.strip()}\n\n"
 
                 # Create an in-memory file for Discord
                 file_bytes = io.BytesIO(history_text.encode('utf-8'))
