@@ -1,7 +1,7 @@
 """OCF Agent Workflow using LlamaIndex Workflow system."""
 
 import asyncio
-import re
+import json
 import time
 from typing import Optional, List, Callable, Awaitable, Any, Dict, Union
 
@@ -70,31 +70,6 @@ class OCFAgentWorkflow(Workflow):
         self._persona_prompt = ""
         self._use_thinking = False
 
-    def _parse_qwen_tools(self, content: str) -> List[Dict[str, Any]]:
-        """Parses Qwen's XML-style tool calls from a string."""
-        if not content or "<tool_call>" not in content:
-            return []
-
-        parsed_calls = []
-        # Matches <function=name> followed by <parameter=name>value</parameter>
-        matches = re.finditer(
-            r"<function=(\w+)>\s*<parameter=(\w+)>(.*?)</parameter>",
-            content,
-            re.DOTALL
-        )
-
-        for match in matches:
-            fn_name = match.group(1)
-            param_name = match.group(2)
-            param_val = match.group(3).strip("\n")
-
-            parsed_calls.append({
-                "name": fn_name,
-                "kwargs": {param_name: param_val}
-            })
-
-        return parsed_calls
-
     @step
     async def handle_start(self, ctx: Context, ev: StartEvent) -> AgentInputEvent:
         """Initializes the reasoning loop from a fresh start."""
@@ -136,9 +111,16 @@ class OCFAgentWorkflow(Workflow):
     @step
     async def handle_context(self, ctx: Context, ev: ContextGatheredEvent) -> AgentInputEvent:
         """Processes tool results and triggers the next reasoning step."""
-        # Wrap tool results in a user message for the LLM to observe
-        self._chat_history.append(ChatMessage(
-            role=MessageRole.USER, content=ev.context_str))
+        # NEW: Properly append individual tool results to satisfy OpenAI schema
+        for tool_res in ev.tool_results:
+            self._chat_history.append(ChatMessage(
+                role=MessageRole.TOOL, 
+                content=str(tool_res["content"]),
+                additional_kwargs={
+                    "tool_call_id": tool_res["id"],
+                    "name": tool_res["name"]
+                }
+            ))
         return AgentInputEvent()
 
     @step
@@ -157,7 +139,6 @@ class OCFAgentWorkflow(Workflow):
             status = "💭 Thinking..." if self._use_thinking else "✨ Generating response..."
             await self._message_callback(status)
 
-        # We use astream_chat_with_tools to ensure the LLM receives the tool definitions
         response_stream = await active_llm.astream_chat_with_tools(
             self.tools,
             chat_history=self._chat_history
@@ -167,6 +148,9 @@ class OCFAgentWorkflow(Workflow):
         full_content = ""
         display_text = ""
         last_edit_time = time.time()
+        
+        # Assemble streaming tool call fragments
+        streaming_tool_calls = {}
 
         async for chunk in response_stream:
             if self._cancelled:
@@ -178,15 +162,38 @@ class OCFAgentWorkflow(Workflow):
             think_delta = chunk.additional_kwargs.get("thinking_delta", "")
             if think_delta:
                 thinking_text += think_delta
-                # Limit thinking block length for Discord
-                truncated = thinking_text if len(
-                    thinking_text) <= 1800 else "..." + thinking_text[-1800:]
+                truncated = thinking_text if len(thinking_text) <= 1800 else "..." + thinking_text[-1800:]
                 display_text = f"💭 **Thinking...**\n```text\n{truncated}\n```"
 
             # Handle regular content deltas
             elif chunk.delta:
                 full_content += chunk.delta
                 display_text = full_content
+
+            # Capture standard OpenAI-style tool calls coming from SGLang
+            tool_call_deltas = chunk.additional_kwargs.get("tool_calls") or []
+            for tc in tool_call_deltas:
+                # Safely extract values whether LlamaIndex returns dicts or objects
+                if isinstance(tc, dict):
+                    idx = tc.get("index")
+                    tc_id = tc.get("id")
+                    fn_name = tc.get("function", {}).get("name", "")
+                    fn_args = tc.get("function", {}).get("arguments", "")
+                else:
+                    idx = tc.index
+                    tc_id = getattr(tc, "id", None)
+                    fn_name = getattr(tc.function, "name", "") if hasattr(tc, "function") else ""
+                    fn_args = getattr(tc.function, "arguments", "") if hasattr(tc, "function") else ""
+
+                if idx not in streaming_tool_calls:
+                    streaming_tool_calls[idx] = {
+                        "id": tc_id or f"call_{idx}",
+                        "name": fn_name,
+                        "arguments": fn_args
+                    }
+                else:
+                    if fn_args:
+                        streaming_tool_calls[idx]["arguments"] += fn_args
 
             # Update Discord message periodically
             now = time.time()
@@ -195,11 +202,35 @@ class OCFAgentWorkflow(Workflow):
                     await self._message_callback(display_text[:2000])
                 last_edit_time = now
 
-        # Parse potential tool calls from the finalized content
-        tool_calls = self._parse_qwen_tools(full_content)
+        # Parse the assembled JSON tool calls
+        tool_calls = []
+        openai_history_tools = []
+        for tc in streaming_tool_calls.values():
+            try:
+                tool_calls.append({
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "kwargs": json.loads(tc["arguments"] or "{}")
+                })
+                # Format required for standard OpenAI assistant history
+                openai_history_tools.append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["arguments"]
+                    }
+                })
+            except Exception as e:
+                print(f"Warning: Failed to parse tool call {tc['name']}: {e}")
 
         # Store assistant response in history
-        kwargs = {"thinking_text": thinking_text} if thinking_text else {}
+        kwargs = {}
+        if thinking_text:
+            kwargs["thinking_text"] = thinking_text
+        if openai_history_tools:
+            kwargs["tool_calls"] = openai_history_tools
+
         self._chat_history.append(ChatMessage(
             role=MessageRole.ASSISTANT,
             content=full_content,
@@ -235,7 +266,7 @@ class OCFAgentWorkflow(Workflow):
     async def execute_tools(self, ctx: Context, ev: ToolDecisionEvent) -> ContextGatheredEvent:
         """Executes one or more tools in parallel and returns their results."""
         tasks = []
-        labels = []
+        tool_meta = []  # Keep track of ID and Name for the results
 
         for tool_call in ev.tool_calls:
             if self._cancelled:
@@ -243,33 +274,43 @@ class OCFAgentWorkflow(Workflow):
 
             name = tool_call.get("name")
             kwargs = tool_call.get("kwargs", {})
+            call_id = tool_call.get("id")
 
             if name in self.tool_map:
-                param_str = ", ".join([f"{k}={v}" for k, v in kwargs.items()])
-                labels.append(f"{name}: {param_str}")
+                tool_meta.append({"id": call_id, "name": name, "kwargs": kwargs})
                 tasks.append(self.tool_map[name].acall(**kwargs))
             else:
                 print(f"Warning: LLM tried to call unknown tool {name}")
+                # We must return a result for the ID even if the tool is missing to satisfy the API
+                tool_meta.append({"id": call_id, "name": name, "kwargs": kwargs})
+                async def fallback(): return f"Error: Tool {name} not found."
+                tasks.append(fallback())
 
         if not tasks:
             return ContextGatheredEvent(
-                context_str="No valid tools were called.",
+                tool_results=[],
                 query_str=self._question,
                 persona_prompt=self._persona_prompt,
                 use_thinking=self._use_thinking,
             )
 
         if self._message_callback:
+            labels = [f"{m['name']}" for m in tool_meta]
             await self._message_callback("🔍 Searching: " + " & ".join([f"`{l}`" for l in labels]))
 
         results = await asyncio.gather(*tasks)
 
-        # Format observations for the LLM
-        context_pieces = [
-            f"--- Tool Result: {l} ---\n{r}" for l, r in zip(labels, results)]
+        # Map results back to their IDs for the history schema
+        formatted_results = []
+        for meta, res in zip(tool_meta, results):
+            formatted_results.append({
+                "id": meta["id"],
+                "name": meta["name"],
+                "content": res
+            })
 
         return ContextGatheredEvent(
-            context_str="Tool Results:\n" + "\n\n".join(context_pieces),
+            tool_results=formatted_results,
             query_str=self._question,
             persona_prompt=self._persona_prompt,
             use_thinking=self._use_thinking,

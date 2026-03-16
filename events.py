@@ -20,7 +20,7 @@ class ToolDecisionEvent(Event):
 
 class ContextGatheredEvent(Event):
     """Event when all context has been gathered."""
-    context_str: str
+    tool_results: List[Dict[str, Any]]
     query_str: str
     persona_prompt: str
     use_thinking: bool
