@@ -198,9 +198,9 @@ class OCFAgentWorkflow(Workflow):
             # Update Discord message periodically
             now = time.time()
             if self._message_callback and now - last_edit_time > 1.2:
-                if display_text:
+                if display_text.strip():
                     await self._message_callback(display_text[:2000])
-                last_edit_time = now
+                    last_edit_time = now
 
         # Parse the assembled JSON tool calls
         tool_calls = []
@@ -247,7 +247,7 @@ class OCFAgentWorkflow(Workflow):
             )
 
         # Final Cleanup for User Display
-        final_display = display_text if display_text else "I couldn't generate a response."
+        final_display = display_text if display_text.strip() else "I couldn't generate a response."
 
         if self._message_callback:
             await self._message_callback(final_display[:2000])
