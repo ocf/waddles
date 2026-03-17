@@ -206,7 +206,20 @@ async def process_query(
             else:
                 final_text = str(result) if result else "I couldn't generate a response."
 
-            await msg.edit(content=final_text[:2000])
+            # --- NEW: Chained Reply Chunking ---
+            if len(final_text) <= 2000:
+                # Fits in one message, just edit the original
+                await msg.edit(content=final_text)
+            else:
+                # Edit the first message with the first 2000 characters
+                await msg.edit(content=final_text[:2000])
+
+                # Keep track of the last message to chain replies
+                last_msg = msg
+
+                # Send the remaining text as chained follow-ups
+                for i in range(2000, len(final_text), 2000):
+                    last_msg = await last_msg.reply(content=final_text[i:i + 2000])
 
             if bot._debug is True:
                 history_text = ""
@@ -233,11 +246,11 @@ async def process_query(
                         for tc in tool_calls:
                             fn_name = tc.get("function", {}).get("name", "unknown")
                             fn_args = tc.get("function", {}).get("arguments", "{}")
-                            content += f"\n🛠️ [TOOL CALL] {fn_name}({fn_args})"
+                            content += f"[TOOL CALL]\n{fn_name}({fn_args})"
 
                     # NEW: Clearly label Tool Responses
                     if role == "TOOL" and kwargs.get("name"):
-                        content = f"📦 [TOOL RESULT FOR '{kwargs.get('name')}']\n{content}"
+                        content = f"[TOOL RESULT FOR '{kwargs.get('name')}']\n{content}"
 
                     if not content.strip():
                         content = "[Image or Non-text content]"
