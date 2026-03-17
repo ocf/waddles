@@ -172,19 +172,12 @@ class OCFAgentWorkflow(Workflow):
                 latest_tool_calls = chunk.message.additional_kwargs.get("tool_calls")
 
             # 4. Dynamically build the Discord message
-            display_parts = []
-
-            if thinking_text:
-                truncated = thinking_text if len(thinking_text) <= 1800 else "..." + thinking_text[-1800:]
-                display_parts.append(f"💭 **Thinking...**\n```text\n{truncated}\n```")
-
-            if full_content:
-                display_parts.append(full_content)
+            display_text = ""
 
             if latest_tool_calls:
+                # 1. Highest priority: Show tool preparation
                 tool_text = "🛠️ **Preparing Tools:**\n"
                 for tc in latest_tool_calls:
-                    # Safely handle LlamaIndex dicts or objects
                     if isinstance(tc, dict):
                         name = tc.get("function", {}).get("name", "...")
                         args = tc.get("function", {}).get("arguments", "")
@@ -193,13 +186,22 @@ class OCFAgentWorkflow(Workflow):
                         name = getattr(func_obj, "name", "...") if func_obj else "..."
                         args = getattr(func_obj, "arguments", "") if func_obj else ""
 
-                    clean_args = args.replace('\n', '').replace('  ', ' ') if args else ""
-                    if len(clean_args) > 60:
-                        clean_args = clean_args[:57] + "..."
-                    tool_text += f"- `{name}({clean_args})`\n"
-                display_parts.append(tool_text.strip())
+                    if args and len(args) > 40:
+                        tool_text += f"- `{name}`:\n```python\n{args}\n```\n"
+                    else:
+                        clean_args = args.replace('\n', '').replace('  ', ' ') if args else ""
+                        tool_text += f"- `{name}({clean_args})`\n"
 
-            display_text = "\n\n".join(display_parts)
+                display_text = tool_text.strip()
+
+            elif full_content.strip():
+                # 2. Second priority: Standard content overrides thoughts
+                display_text = full_content
+
+            elif thinking_text:
+                # 3. Lowest priority: Only thoughts exist so far
+                truncated = thinking_text if len(thinking_text) <= 1800 else "..." + thinking_text[-1800:]
+                display_text = f"💭 **Thinking...**\n```text\n{truncated}\n```"
 
             # 5. Update Discord message periodically
             now = time.time()
@@ -267,7 +269,7 @@ class OCFAgentWorkflow(Workflow):
             )
 
         # Final Cleanup for User Display
-        final_display = display_text if display_text.strip() else "I couldn't generate a response."
+        final_display = full_content.strip() if full_content.strip() else "I couldn't generate a response."
 
         if self._message_callback:
             await self._message_callback(final_display[:2000])
@@ -316,7 +318,7 @@ class OCFAgentWorkflow(Workflow):
 
         if self._message_callback:
             labels = [f"{m['name']}" for m in tool_meta]
-            await self._message_callback("🔍 Searching: " + " & ".join([f"`{l}`" for l in labels]))
+            await self._message_callback("⚙️ Executing: " + " & ".join([f"`{l}`" for l in labels]))
 
         results = await asyncio.gather(*tasks)
 
