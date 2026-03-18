@@ -18,7 +18,7 @@ ADMIN_ROLE_ID = 735620451295821906
 # --- LLM Settings ---
 OLLAMA_URL = "http://127.0.0.1:11434"
 SGLANG_URL = "http://127.0.0.1:30000/v1"
-MODEL_NAME = "Qwen/Qwen3.5-35B-A3B-GPTQ-Int4"
+MODEL_NAME = "Qwen/Qwen3.5-27B-GPTQ-Int4"
 EMBEDDING_NAME = "qwen3-embedding:8b"
 
 # --- Paths ---

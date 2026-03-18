@@ -7,7 +7,7 @@ cd ~/waddles
 virtualenv venv
 source venv/bin/activate
 pip install 'git+https://github.com/sgl-project/sglang.git#subdirectory=python&egg=sglang[all]'
-CUDA_VISIBLE_DEVICES=1,2 python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B-GPTQ-Int4 --port 30000 --tp-size 2 --mem-fraction-static 0.4 --context-length 32768 --reasoning-parser qwen3 --quantization moe_wna16 # --tool-call-parser qwen3_coder
+CUDA_VISIBLE_DEVICES=1,2 python -m sglang.launch_server --model-path Qwen/Qwen3.5-35B-A3B-GPTQ-Int4 --port 30000 --tp-size 2 --mem-fraction-static 0.4 --context-length 32768 --reasoning-parser qwen3 --tool-call-parser qwen3_coder --quantization moe_wna16
 ```
 
 ## Environment
