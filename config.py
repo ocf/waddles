@@ -28,6 +28,7 @@ DATA_DIR = "/app/data"
 PERSONA_DIR = f"{DATA_DIR}/persona"
 SETTINGS_DIR = f"{DATA_DIR}/settings"
 MEMORY_DIR = f"{DATA_DIR}/memory"
+STATUS_FILE = f"{DATA_DIR}/status.json"
 SYNC_SCRIPT = "/app/sync.sh"
 
 # Ensure directories exist

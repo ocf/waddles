@@ -11,6 +11,7 @@ import textwrap
 import traceback
 import base64
 import mimetypes
+import json
 from contextlib import redirect_stdout
 from typing import Dict, Any, List, Optional
 
@@ -25,6 +26,7 @@ from config import (
     OWNER_IDS,
     ADMIN_ROLE_ID,
     DOCS_DIR,
+    STATUS_FILE,
     SGLANG_URL,
 )
 from database import (
@@ -91,6 +93,29 @@ class OCFBot(commands.Bot):
             timeout=300.0,
             depth=0,
         )
+
+    async def update_status(self, name: Optional[str] = None):
+        """
+        Manages the bot's status.
+        If `name` is provided, saves it and sets the status.
+        If `name` is None, loads the saved status and sets it.
+        """
+        try:
+            if name is not None:
+                # Save to disk
+                with open(STATUS_FILE, "w", encoding="utf-8") as f:
+                    json.dump({"name": name}, f)
+            else:
+                # Load from disk
+                if os.path.exists(STATUS_FILE):
+                    with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        name = data.get("name")
+
+            if name:
+                await self.change_presence(activity=discord.Game(name=name))
+        except Exception as e:
+            print(f"Error updating status: {e}")
 
     @tasks.loop(hours=1.0)
     async def update_docs_loop(self):
@@ -353,6 +378,7 @@ async def process_query(
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} - ready to answer OCF questions!")
+    await bot.update_status()
 
 
 @bot.command(name="ping")
@@ -580,6 +606,15 @@ async def debug(ctx):
     """Toggles debug mode, which sends the full workflow chat history after each query."""
     bot._debug = not bot._debug
     await ctx.reply(f"🐛 Debug mode is now {'ON' if bot._debug else 'OFF'}.")
+
+
+@bot.command(name="setstatus")
+@commands.guild_only()
+@commands.is_owner()
+async def setstatus(ctx, *, name: str):
+    """Sets the bot's status and saves it across reboots."""
+    await bot.update_status(name)
+    await ctx.reply(f"✅ Status updated to: **Playing {name}**")
 
 
 @bot.command(name="eval", hidden=True)
