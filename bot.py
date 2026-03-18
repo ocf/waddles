@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 
 import discord
 from discord.ext import commands, tasks
+from llama_index.core.llms import ChatMessage, MessageRole, ImageBlock, TextBlock
 
 # Local imports
 from config import (
@@ -104,6 +105,73 @@ class OCFBot(commands.Bot):
         except Exception as e:
             print(f"❌ Failed to update index: {e}")
 
+    async def on_message(self, message: discord.Message):
+        """Handles incoming messages, specifically for continuous thread conversations."""
+        # 1. Ignore own messages
+        if message.author == self.user:
+            return
+
+        # 2. Handle commands normally
+        if message.content.startswith(PREFIX):
+            await self.process_commands(message)
+            return
+
+        # 3. Handle messages in Waddles-owned threads
+        if isinstance(message.channel, discord.Thread):
+            # Check if Waddles is the owner or if the thread started on a Waddles message
+            thread = message.channel
+            is_waddles_thread = (thread.owner_id == self.user.id)
+
+            if not is_waddles_thread:
+                # Optional: Check if the starting message was from Waddles
+                try:
+                    starter = await thread.parent.fetch_message(thread.id)
+                    if starter.author == self.user:
+                        is_waddles_thread = True
+                except (discord.NotFound, discord.HTTPException, AttributeError):
+                    pass
+
+            if is_waddles_thread:
+                # Reconstruct history from the thread
+                history_limit = 20
+                reconstructed_history: List[ChatMessage] = []
+
+                # Fetch history BEFORE the current message
+                async for msg in thread.history(limit=history_limit, before=message):
+                    role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
+
+                    # Extract text and handle images
+                    blocks = [TextBlock(text=msg.content or "")]
+                    if msg.attachments:
+                        for attr in msg.attachments:
+                            data_url = await get_attachment_data_url(attr)
+                            if data_url:
+                                blocks.append(ImageBlock(url=data_url))
+
+                    reconstructed_history.append(ChatMessage(role=role, blocks=blocks))
+
+                # History is fetched newest first, so reverse it
+                reconstructed_history.reverse()
+
+                # Get the user's default persona
+                persona_name = get_user_default_persona(message.author.id)
+                prompt_str = get_persona_prompt(persona_name)
+
+                # Create a context and process the query
+                ctx = await self.get_context(message)
+                await process_query(
+                    ctx,
+                    question=message.content,
+                    prompt_template_str=prompt_str,
+                    use_thinking=False,  # Default to False for thread replies
+                    attachments=message.attachments,
+                    initial_history=reconstructed_history
+                )
+                return
+
+        # Fallback for non-thread, non-command messages (if needed)
+        # await self.process_commands(message)
+
 
 bot = OCFBot()
 
@@ -128,7 +196,8 @@ async def process_query(
     question: Optional[str],
     prompt_template_str: str,
     use_thinking: bool,
-    attachments: Optional[List[discord.Attachment]] = None
+    attachments: Optional[List[discord.Attachment]] = None,
+    initial_history: Optional[List[ChatMessage]] = None
 ) -> None:
     """Process a query using the workflow system.
 
@@ -138,6 +207,7 @@ async def process_query(
         prompt_template_str: The persona prompt template.
         use_thinking: Whether to use thinking mode.
         attachments: List of Discord attachments.
+        initial_history: Optional list of past messages for context.
     """
     if not bot.index:
         await ctx.reply("I'm still warming up my brain, try again in a sec!")
@@ -174,9 +244,6 @@ async def process_query(
 
     async with ctx.typing():
         try:
-            # Get persistent memory for this user
-            memory = get_user_memory(user_id, llm_standard)
-
             # Create a fresh workflow instance for this query
             workflow = OCFAgentWorkflow(
                 llm_standard=llm_standard,
@@ -184,7 +251,7 @@ async def process_query(
                 index=bot.index,
                 timeout=300.0,
                 depth=0,
-                memory=None,  # memory,
+                memory=None,
             )
 
             # Store reference to workflow for cancellation
@@ -198,6 +265,7 @@ async def process_query(
                 use_thinking=use_thinking,
                 image_urls=image_urls,
                 message_callback=message_callback,
+                initial_history=initial_history
             )
 
             # Handle the result
@@ -220,6 +288,13 @@ async def process_query(
                 # Send the remaining text as chained follow-ups
                 for i in range(2000, len(final_text), 2000):
                     last_msg = await last_msg.reply(content=final_text[i:i + 2000])
+
+            # --- NEW: Thread Creation for Continuous Conversation ---
+            if ctx.guild and not isinstance(ctx.channel, discord.Thread):
+                try:
+                    await msg.create_thread(name="Chat with Waddles", auto_archive_duration=60)
+                except (discord.Forbidden, discord.HTTPException):
+                    pass  # Might not have permissions or thread already exists
 
             if bot._debug is True:
                 history_text = ""

@@ -79,6 +79,7 @@ class OCFAgentWorkflow(Workflow):
         self._use_thinking = ev.get("use_thinking", False)
         self._message_callback = ev.get("message_callback")
         image_urls = ev.get("image_urls", [])
+        initial_history = ev.get("initial_history", [])
         self._cancelled = False
         self._loop_count = 0
 
@@ -86,9 +87,11 @@ class OCFAgentWorkflow(Workflow):
         system_content = self._persona_prompt + "\n\n"
         system_content += get_tool_prompt(self._user_name, self._use_thinking)
 
-        # Retrieve relevant past history from memory blocks
+        # Build initial history: Priority to explicitly provided history
         past_history = []
-        if self.memory:
+        if initial_history:
+            past_history = initial_history
+        elif self.memory:
             # For multimodal queries, we only search memory with the text part
             past_history = await self.memory.aget(input=self._question)
 
