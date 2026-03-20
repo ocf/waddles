@@ -10,6 +10,7 @@ OWNER_IDS = set([
     446290930723717120,
     1023113941624295434,
     330550318305640458,
+    132292993511063552,
 ])
 
 # Provide a fallback just in case it's missing in .env
