@@ -378,10 +378,11 @@ async def process_query(
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user} - ready to answer OCF questions!")
+    await bot.tree.sync()
     await bot.update_status()
 
 
-@bot.command(name="ping")
+@bot.hybrid_command(name="ping")
 @commands.guild_only()
 async def ping(ctx):
     """Checks if the bot is online and measures latency."""
@@ -393,7 +394,7 @@ async def ping(ctx):
     await message.edit(content=f"🏓 **Pong!**\nWebsocket: `{api_latency}ms`\nRound-trip: `{round_trip}ms`")
 
 
-@bot.command(name="ask")
+@bot.hybrid_command(name="ask")
 @commands.guild_only()
 async def ask(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using your default persona."""
@@ -402,7 +403,7 @@ async def ask(ctx, *, question: Optional[str] = None):
     await process_query(ctx, question, prompt_str, use_thinking=False, attachments=ctx.message.attachments)
 
 
-@bot.command(name="think")
+@bot.hybrid_command(name="think")
 @commands.guild_only()
 async def think(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using thinking mode and your default persona."""
@@ -411,7 +412,7 @@ async def think(ctx, *, question: Optional[str] = None):
     await process_query(ctx, question, prompt_str, use_thinking=True, attachments=ctx.message.attachments)
 
 
-@bot.command(name="askas")
+@bot.hybrid_command(name="askas")
 @commands.guild_only()
 async def askas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question normally."""
@@ -426,7 +427,7 @@ async def askas(ctx, name: str, *, question: Optional[str] = None):
     await process_query(ctx, question, prompt, use_thinking=False, attachments=ctx.message.attachments)
 
 
-@bot.command(name="thinkas")
+@bot.hybrid_command(name="thinkas")
 @commands.guild_only()
 async def thinkas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question using thinking mode."""
@@ -441,7 +442,7 @@ async def thinkas(ctx, name: str, *, question: Optional[str] = None):
     await process_query(ctx, question, prompt, use_thinking=True, attachments=ctx.message.attachments)
 
 
-@bot.command(name="stop")
+@bot.hybrid_command(name="stop")
 @commands.guild_only()
 async def stop(ctx):
     """Stops all of your ongoing response generations."""
@@ -560,7 +561,7 @@ async def persona_view(ctx, name: str):
 # --- 8. ADMIN UTILITIES ---
 
 
-@bot.command(name="note", hidden=True)
+@bot.hybrid_command(name="note", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def note(ctx, *, content: str):
@@ -573,7 +574,7 @@ async def note(ctx, *, content: str):
         await ctx.reply(f"❌ Failed to save note: {e}")
 
 
-@bot.command(name="reload", hidden=True)
+@bot.hybrid_command(name="reload", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def reload(ctx):
@@ -586,7 +587,7 @@ async def reload(ctx):
         await msg.edit(content=f"❌ Failed to update: {e}")
 
 
-@bot.command(name="reloadfull", hidden=True)
+@bot.hybrid_command(name="reloadfull", hidden=True)
 @commands.guild_only()
 @commands.has_role(ADMIN_ROLE_ID)
 async def reloadfull(ctx):
@@ -599,7 +600,7 @@ async def reloadfull(ctx):
         await msg.edit(content=f"❌ Failed to sync or update: {e}")
 
 
-@bot.command(name="debug", hidden=True)
+@bot.hybrid_command(name="debug", hidden=True)
 @commands.guild_only()
 @commands.is_owner()
 async def debug(ctx):
@@ -608,7 +609,7 @@ async def debug(ctx):
     await ctx.reply(f"🐛 Debug mode is now {'ON' if bot._debug else 'OFF'}.")
 
 
-@bot.command(name="setstatus")
+@bot.hybrid_command(name="setstatus")
 @commands.guild_only()
 @commands.is_owner()
 async def setstatus(ctx, *, name: str):
@@ -617,7 +618,7 @@ async def setstatus(ctx, *, name: str):
     await ctx.reply(f"✅ Status updated to: **Playing {name}**")
 
 
-@bot.command(name="eval", hidden=True)
+@bot.hybrid_command(name="eval", hidden=True)
 @commands.guild_only()
 @commands.is_owner()
 async def _eval(ctx, *, body: str):
@@ -671,7 +672,7 @@ async def _eval(ctx, *, body: str):
             await ctx.send(f'```py\n{value}{ret}\n```')
 
 
-@bot.command(name="shell", hidden=True)
+@bot.hybrid_command(name="shell", hidden=True)
 @commands.guild_only()
 @commands.is_owner()
 async def shell(ctx, *, command: str):
