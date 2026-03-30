@@ -370,6 +370,18 @@ async def process_query(
             # Ensure the final response is fully streamed/chunked
             await message_callback(final_text)
 
+            # Ensure thread is created even for single-chunk responses
+            if ctx.guild and not isinstance(ctx.channel, discord.Thread) and len(response_messages) == 1:
+                try:
+                    # Double check if a thread was somehow created but target_thread wasn't updated
+                    # (though target_thread is nonlocal and should be updated if created in callback)
+                    await response_messages[0].create_thread(
+                        name="Chat with Waddles", auto_archive_duration=60
+                    )
+                except Exception as e:
+                    # Ignore if thread already exists or permissions issues
+                    pass
+
             if bot._debug is True:
                 history_text = ""
                 for chat_msg in workflow._chat_history:
