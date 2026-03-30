@@ -10,7 +10,6 @@ import asyncio
 import textwrap
 import traceback
 import base64
-import mimetypes
 import json
 from contextlib import redirect_stdout
 from typing import Dict, Any, List, Optional
@@ -115,87 +114,110 @@ class OCFBot(commands.Bot):
             if name:
                 await self.change_presence(activity=discord.Game(name=name))
         except Exception as e:
-            print(f"Error updating status: {e}")
+            print(f"Failed to update bot status, {e}")
 
     @tasks.loop(hours=1.0)
     async def update_docs_loop(self):
         """Hourly task to update the document index."""
         if self.update_docs_loop.current_loop == 0:
             return
-        print("⏰ Running scheduled hourly docs update...")
+        print("Running scheduled hourly docs update...")
         try:
             await asyncio.to_thread(update_index, self.index)
             self._setup_workflow()  # Refresh workflow with updated index
-            print("✅ Hourly smart-update complete.")
+            print("Hourly smart-update complete.")
         except Exception as e:
-            print(f"❌ Failed to update index: {e}")
+            print(f"Failed during hourly index update, {e}")
+
+    async def _is_waddles_thread(self, thread: discord.Thread) -> bool:
+        """Check if a thread was created by Waddles (either as owner or starter)."""
+        if thread.owner_id == self.user.id:
+            return True
+
+        try:
+            starter = await thread.parent.fetch_message(thread.id)
+            return starter.author == self.user
+        except Exception as e:
+            print(f"Failed to check thread ownership for thread {thread.id}, {e}")
+            return False
+
+    async def _build_chat_message(self, msg: discord.Message) -> ChatMessage:
+        """Convert a Discord message into a LlamaIndex ChatMessage with image support."""
+        role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
+
+        blocks = [TextBlock(text=msg.content or "")]
+        for attachment in msg.attachments:
+            data_url = await get_attachment_data_url(attachment)
+            if not data_url:
+                continue
+            blocks.append(ImageBlock(url=data_url))
+
+        return ChatMessage(role=role, blocks=blocks)
+
+    async def _get_thread_history(
+        self, thread: discord.Thread, before: discord.Message, limit: int = 20
+    ) -> List[ChatMessage]:
+        """Reconstruct conversation history from a thread, including the original parent message.
+
+        Fetches up to `limit` messages from the thread (before the current message),
+        then attempts to retrieve the original user question from the parent channel
+        that spawned the thread.
+        """
+        history: List[ChatMessage] = []
+
+        # Collect in-thread messages (returned newest-first)
+        async for msg in thread.history(limit=limit, before=before):
+            history.append(await self._build_chat_message(msg))
+        history.reverse()
+
+        # Fetch the original user question from the parent channel.
+        # The thread starter is Waddles' reply; its .reference points to the user's message.
+        try:
+            starter = thread.starter_message or await thread.fetch_message(thread.id)
+            if starter and starter.reference and starter.reference.message_id:
+                original_msg = await thread.parent.fetch_message(
+                    starter.reference.message_id
+                )
+                original_chat_msg = await self._build_chat_message(original_msg)
+                history.insert(0, original_chat_msg)
+        except Exception as e:
+            print(
+                f"Failed to fetch original parent message for thread {thread.id}, {e}"
+            )
+
+        return history
 
     async def on_message(self, message: discord.Message):
         """Handles incoming messages, specifically for continuous thread conversations."""
-        # 1. Ignore own messages
         if message.author == self.user:
             return
 
-        # 2. Handle commands normally
         if message.content.startswith(PREFIX):
             await self.process_commands(message)
             return
 
-        # 3. Handle messages in Waddles-owned threads
         if isinstance(message.channel, discord.Thread):
-            # Check if Waddles is the owner or if the thread started on a Waddles message
             thread = message.channel
-            is_waddles_thread = (thread.owner_id == self.user.id)
-
-            if not is_waddles_thread:
-                # Optional: Check if the starting message was from Waddles
-                try:
-                    starter = await thread.parent.fetch_message(thread.id)
-                    if starter.author == self.user:
-                        is_waddles_thread = True
-                except (discord.NotFound, discord.HTTPException, AttributeError):
-                    pass
-
-            if is_waddles_thread:
-                # Reconstruct history from the thread
-                history_limit = 20
-                reconstructed_history: List[ChatMessage] = []
-
-                # Fetch history BEFORE the current message
-                async for msg in thread.history(limit=history_limit, before=message):
-                    role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
-
-                    # Extract text and handle images
-                    blocks = [TextBlock(text=msg.content or "")]
-                    if msg.attachments:
-                        for attr in msg.attachments:
-                            data_url = await get_attachment_data_url(attr)
-                            if data_url:
-                                blocks.append(ImageBlock(url=data_url))
-
-                    reconstructed_history.append(ChatMessage(role=role, blocks=blocks))
-
-                # History is fetched newest first, so reverse it
-                reconstructed_history.reverse()
-
-                # Get the user's default persona
-                persona_name = get_user_default_persona(message.author.id)
-                prompt_str = get_persona_prompt(persona_name)
-
-                # Create a context and process the query
-                ctx = await self.get_context(message)
-                await process_query(
-                    ctx,
-                    question=message.content,
-                    prompt_template_str=prompt_str,
-                    use_thinking=False,  # Default to False for thread replies
-                    attachments=message.attachments,
-                    initial_history=reconstructed_history
-                )
+            if not await self._is_waddles_thread(thread):
                 return
 
-        # Fallback for non-thread, non-command messages (if needed)
-        # await self.process_commands(message)
+            reconstructed_history = await self._get_thread_history(
+                thread, before=message
+            )
+
+            persona_name = get_user_default_persona(message.author.id)
+            prompt_str = get_persona_prompt(persona_name)
+
+            ctx = await self.get_context(message)
+            await process_query(
+                ctx,
+                question=message.content,
+                prompt_template_str=prompt_str,
+                use_thinking=False,
+                attachments=message.attachments,
+                initial_history=reconstructed_history,
+            )
+            return
 
 
 bot = OCFBot()
@@ -212,7 +234,7 @@ async def get_attachment_data_url(attachment: discord.Attachment) -> Optional[st
         base64_data = base64.b64encode(data).decode("utf-8")
         return f"data:{attachment.content_type};base64,{base64_data}"
     except Exception as e:
-        print(f"Error processing attachment {attachment.filename}: {e}")
+        print(f"Failed to process attachment {attachment.filename}, {e}")
         return None
 
 
@@ -222,7 +244,7 @@ async def process_query(
     prompt_template_str: str,
     use_thinking: bool,
     attachments: Optional[List[discord.Attachment]] = None,
-    initial_history: Optional[List[ChatMessage]] = None
+    initial_history: Optional[List[ChatMessage]] = None,
 ) -> None:
     """Process a query using the workflow system.
 
@@ -256,8 +278,8 @@ async def process_query(
     async def message_callback(text: str) -> None:
         try:
             await msg.edit(content=text[:2000])
-        except discord.HTTPException:
-            pass  # Ignore rate limits and other HTTP errors
+        except Exception as e:
+            print(f"Failed to edit status message (rate limited or deleted), {e}")
 
     # Resolve attachments to image URLs
     image_urls = []
@@ -290,14 +312,16 @@ async def process_query(
                 use_thinking=use_thinking,
                 image_urls=image_urls,
                 message_callback=message_callback,
-                initial_history=initial_history
+                initial_history=initial_history,
             )
 
             # Handle the result
             if isinstance(result, ResponseCompleteEvent):
                 final_text = result.final_text
             else:
-                final_text = str(result) if result else "I couldn't generate a response."
+                final_text = (
+                    str(result) if result else "I couldn't generate a response."
+                )
 
             # --- NEW: Chained Reply Chunking ---
             if len(final_text) <= 2000:
@@ -312,25 +336,28 @@ async def process_query(
 
                 # Send the remaining text as chained follow-ups
                 for i in range(2000, len(final_text), 2000):
-                    last_msg = await last_msg.reply(content=final_text[i:i + 2000])
+                    last_msg = await last_msg.reply(content=final_text[i: i + 2000])
 
-            # --- NEW: Thread Creation for Continuous Conversation ---
             if ctx.guild and not isinstance(ctx.channel, discord.Thread):
                 try:
-                    await msg.create_thread(name="Chat with Waddles", auto_archive_duration=60)
-                except (discord.Forbidden, discord.HTTPException):
-                    pass  # Might not have permissions or thread already exists
+                    await msg.create_thread(
+                        name="Chat with Waddles", auto_archive_duration=60
+                    )
+                except Exception as e:
+                    print(f"Failed to create thread on message {msg.id}, {e}")
 
             if bot._debug is True:
                 history_text = ""
                 for chat_msg in workflow._chat_history:
                     # Extract role name safely
-                    role = str(getattr(chat_msg.role, 'value', chat_msg.role)).upper()
+                    role = str(getattr(chat_msg.role, "value", chat_msg.role)).upper()
 
                     # Extract text content (handling both standard content and multimodal blocks)
                     content = chat_msg.content or ""
-                    if not content and getattr(chat_msg, 'blocks', None):
-                        content = "\n".join([b.text for b in chat_msg.blocks if hasattr(b, 'text')])
+                    if not content and getattr(chat_msg, "blocks", None):
+                        content = "\n".join(
+                            [b.text for b in chat_msg.blocks if hasattr(b, "text")]
+                        )
 
                     # Extract additional kwargs safely
                     kwargs = getattr(chat_msg, "additional_kwargs", {}) or {}
@@ -358,13 +385,18 @@ async def process_query(
                     history_text += f"=== {role} ===\n{content.strip()}\n\n"
 
                 # Create an in-memory file for Discord
-                file_bytes = io.BytesIO(history_text.encode('utf-8'))
-                discord_file = discord.File(file_bytes, filename=f"chat_history_{query_id}.txt")
+                file_bytes = io.BytesIO(history_text.encode("utf-8"))
+                discord_file = discord.File(
+                    file_bytes, filename=f"chat_history_{query_id}.txt"
+                )
 
                 # Send the file into the channel
-                await ctx.send("Here is the full workflow chat history:", file=discord_file)
+                await ctx.send(
+                    "Here is the full workflow chat history:", file=discord_file
+                )
 
         except Exception as e:
+            print(f"Workflow failed for query {query_id} from user {user_id}, {e}")
             await msg.edit(content=f"My circuits fried trying to answer that: {e}")
         finally:
             # Cleanup: Remove this query from active workflows
@@ -390,7 +422,9 @@ async def ping(ctx):
     end_time = time.time()
     api_latency = round(bot.latency * 1000)
     round_trip = round((end_time - start_time) * 1000)
-    await message.edit(content=f"🏓 **Pong!**\nWebsocket: `{api_latency}ms`\nRound-trip: `{round_trip}ms`")
+    await message.edit(
+        content=f"🏓 **Pong!**\nWebsocket: `{api_latency}ms`\nRound-trip: `{round_trip}ms`"
+    )
 
 
 @bot.command(name="ask")
@@ -399,7 +433,13 @@ async def ask(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using your default persona."""
     persona_name = get_user_default_persona(ctx.author.id)
     prompt_str = get_persona_prompt(persona_name)
-    await process_query(ctx, question, prompt_str, use_thinking=False, attachments=ctx.message.attachments)
+    await process_query(
+        ctx,
+        question,
+        prompt_str,
+        use_thinking=False,
+        attachments=ctx.message.attachments,
+    )
 
 
 @bot.command(name="think")
@@ -408,7 +448,13 @@ async def think(ctx, *, question: Optional[str] = None):
     """Ask Waddles a question using thinking mode and your default persona."""
     persona_name = get_user_default_persona(ctx.author.id)
     prompt_str = get_persona_prompt(persona_name)
-    await process_query(ctx, question, prompt_str, use_thinking=True, attachments=ctx.message.attachments)
+    await process_query(
+        ctx,
+        question,
+        prompt_str,
+        use_thinking=True,
+        attachments=ctx.message.attachments,
+    )
 
 
 @bot.command(name="askas")
@@ -417,13 +463,17 @@ async def askas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question normally."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     if not persona_exists(name):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     prompt = get_persona_prompt(name)
-    await process_query(ctx, question, prompt, use_thinking=False, attachments=ctx.message.attachments)
+    await process_query(
+        ctx, question, prompt, use_thinking=False, attachments=ctx.message.attachments
+    )
 
 
 @bot.command(name="thinkas")
@@ -432,13 +482,17 @@ async def thinkas(ctx, name: str, *, question: Optional[str] = None):
     """Ask a custom persona a question using thinking mode."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     if not persona_exists(name):
         return await ctx.reply(f"❌ Persona `{name}` not found. Check `?persona list`.")
 
     prompt = get_persona_prompt(name)
-    await process_query(ctx, question, prompt, use_thinking=True, attachments=ctx.message.attachments)
+    await process_query(
+        ctx, question, prompt, use_thinking=True, attachments=ctx.message.attachments
+    )
 
 
 @bot.command(name="stop")
@@ -455,6 +509,7 @@ async def stop(ctx):
         await ctx.reply("🛑 Stopping all your active generations...")
     else:
         await ctx.reply("You don't have any active queries to stop.")
+
 
 # --- 7. PERSONA MANAGEMENT ---
 
@@ -479,7 +534,9 @@ async def persona_default(ctx, name: str):
     """Sets your default persona for ?ask and ?think."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     # Validate the persona actually exists
     if not persona_exists(name):
@@ -496,13 +553,20 @@ async def persona_set(ctx, name: str, *, prompt: str):
     """Creates or updates a persona."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     # Check permissions if overwriting
     existing_data = get_persona_data(name)
     if existing_data:
-        if ctx.author.id != existing_data.get("creator_id") and ctx.author.id not in OWNER_IDS:
-            return await ctx.reply("❌ You didn't create this persona and you aren't an owner. You cannot overwrite it.")
+        if (
+            ctx.author.id != existing_data.get("creator_id")
+            and ctx.author.id not in OWNER_IDS
+        ):
+            return await ctx.reply(
+                "❌ You didn't create this persona and you aren't an owner. You cannot overwrite it."
+            )
 
     save_persona(name, ctx.author.id, prompt)
     await ctx.reply(f"✅ Persona `{name}` saved! Test it with `?askas {name} hi`.")
@@ -515,14 +579,21 @@ async def persona_delete(ctx, name: str):
     """Deletes a persona."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     existing_data = get_persona_data(name)
     if not existing_data:
         return await ctx.reply(f"❌ Persona `{name}` not found.")
 
-    if ctx.author.id != existing_data.get("creator_id") and ctx.author.id not in OWNER_IDS:
-        return await ctx.reply("❌ You didn't create this persona and you aren't an owner. You cannot delete it.")
+    if (
+        ctx.author.id != existing_data.get("creator_id")
+        and ctx.author.id not in OWNER_IDS
+    ):
+        return await ctx.reply(
+            "❌ You didn't create this persona and you aren't an owner. You cannot delete it."
+        )
 
     delete_persona(name)
     await ctx.reply(f"🗑️ Persona `{name}` has been deleted.")
@@ -536,7 +607,9 @@ async def persona_list(ctx):
     files = list_personas()
     if not files:
         return await ctx.reply("No custom personas exist yet.")
-    await ctx.reply(f"👥 **Available Personas:**\n" + "\n".join([f"- `{f}`" for f in files]))
+    await ctx.reply(
+        f"👥 **Available Personas:**\n" + "\n".join([f"- `{f}`" for f in files])
+    )
 
 
 @persona.command(name="view")
@@ -546,16 +619,21 @@ async def persona_view(ctx, name: str):
     """Shows the prompt configuration for a given persona."""
     name = name.lower()
     if not is_valid_persona_name(name):
-        return await ctx.reply("❌ Persona names can only contain lowercase letters and numbers (a-z0-9).")
+        return await ctx.reply(
+            "❌ Persona names can only contain lowercase letters and numbers (a-z0-9)."
+        )
 
     data = get_persona_data(name)
     if not data:
         return await ctx.reply(f"❌ Persona `{name}` not found.")
 
-    prompt_text = data.get('prompt', 'No prompt found.')
-    creator = f"<@{data.get('creator_id')}>" if data.get('creator_id') else "Unknown"
+    prompt_text = data.get("prompt", "No prompt found.")
+    creator = f"<@{data.get('creator_id')}>" if data.get("creator_id") else "Unknown"
 
-    await ctx.reply(f"**Persona:** `{name}`\n**Creator:** {creator}\n**Prompt:**\n```text\n{prompt_text}\n```")
+    await ctx.reply(
+        f"**Persona:** `{name}`\n**Creator:** {creator}\n**Prompt:**\n```text\n{prompt_text}\n```"
+    )
+
 
 # --- 8. ADMIN UTILITIES ---
 
@@ -568,8 +646,11 @@ async def note(ctx, *, content: str):
     try:
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(f"\nNote from {ctx.author.name}: {content}\n")
-        await ctx.reply("✅ Note saved! Waddles will learn this on the next `?reload` or hourly sync.")
+        await ctx.reply(
+            "✅ Note saved! Waddles will learn this on the next `?reload` or hourly sync."
+        )
     except Exception as e:
+        print(f"Failed to save note from user {ctx.author.id}, {e}")
         await ctx.reply(f"❌ Failed to save note: {e}")
 
 
@@ -583,6 +664,7 @@ async def reload(ctx):
         bot._setup_workflow()
         await msg.edit(content="✅ Successfully smartly updated the index!")
     except Exception as e:
+        print(f"Failed to smart-update index, {e}")
         await msg.edit(content=f"❌ Failed to update: {e}")
 
 
@@ -596,6 +678,7 @@ async def reloadfull(ctx):
         bot._setup_workflow()
         await msg.edit(content="✅ Successfully synced and smartly updated the index!")
     except Exception as e:
+        print(f"Failed to full-sync and update index, {e}")
         await msg.edit(content=f"❌ Failed to sync or update: {e}")
 
 
@@ -624,13 +707,13 @@ async def _eval(ctx, *, body: str):
     """Evaluates python code."""
     # Prepare the environment with useful variables
     env = {
-        'bot': bot,
-        'ctx': ctx,
-        'channel': ctx.channel,
-        'author': ctx.author,
-        'guild': ctx.guild,
-        'message': ctx.message,
-        '_': bot._last_result
+        "bot": bot,
+        "ctx": ctx,
+        "channel": ctx.channel,
+        "author": ctx.author,
+        "guild": ctx.guild,
+        "message": ctx.message,
+        "_": bot._last_result,
     }
 
     # Clean up the input (remove code blocks if present)
@@ -642,33 +725,33 @@ async def _eval(ctx, *, body: str):
     stdout = io.StringIO()
 
     # Wrap code in an async function to allow 'await'
-    to_compile = f'async def func():\n{textwrap.indent(body, "  ")}'
+    to_compile = f"async def func():\n{textwrap.indent(body, '  ')}"
 
     try:
         exec(to_compile, env)
     except Exception as e:
-        return await ctx.send(f'```py\n{e.__class__.__name__}: {e}\n```')
+        return await ctx.send(f"```py\n{e.__class__.__name__}: {e}\n```")
 
-    func = env['func']
+    func = env["func"]
     try:
         with redirect_stdout(stdout):
             ret = await func()
     except Exception as e:
         value = stdout.getvalue()
-        await ctx.send(f'```py\n{value}{traceback.format_exc()}\n```')
+        await ctx.send(f"```py\n{value}{traceback.format_exc()}\n```")
     else:
         value = stdout.getvalue()
         try:
-            await ctx.message.add_reaction('\u2705')  # Checkmark
-        except BaseException:
-            pass
+            await ctx.message.add_reaction("\u2705")  # Checkmark
+        except Exception as e:
+            print(f"Failed to add reaction to eval message {ctx.message.id}, {e}")
 
         if ret is None:
             if value:
-                await ctx.send(f'```py\n{value}\n```')
+                await ctx.send(f"```py\n{value}\n```")
         else:
             bot._last_result = ret
-            await ctx.send(f'```py\n{value}{ret}\n```')
+            await ctx.send(f"```py\n{value}{ret}\n```")
 
 
 @bot.command(name="shell", hidden=True)
@@ -687,9 +770,7 @@ async def shell(ctx, *, command: str):
     try:
         # Run the command asynchronously
         process = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
 
         stdout, stderr = await process.communicate()
@@ -713,12 +794,14 @@ async def shell(ctx, *, command: str):
             with io.BytesIO(response.encode()) as file_ptr:
                 await ctx.send(
                     "Output too long, sending as file:",
-                    file=discord.File(file_ptr, filename="output.txt")
+                    file=discord.File(file_ptr, filename="output.txt"),
                 )
         else:
             await msg.edit(content=response)
 
     except Exception as e:
+        print(f"Shell command failed: {command}, {e}")
         await msg.edit(content=f"❌ Error: `{e}`")
+
 
 bot.run(TOKEN or "")
