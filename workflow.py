@@ -210,7 +210,7 @@ class OCFAgentWorkflow(Workflow):
             now = time.time()
             if self._message_callback and now - last_edit_time > 1.2:
                 if display_text.strip():
-                    await self._message_callback(display_text[:2000])
+                    await self._message_callback(display_text)
                     last_edit_time = now
 
         # --- Stream Complete: Parse the final tool calls ---
@@ -275,7 +275,7 @@ class OCFAgentWorkflow(Workflow):
         final_display = full_content.strip() if full_content.strip() else "I couldn't generate a response."
 
         if self._message_callback:
-            await self._message_callback(final_display[:2000])
+            await self._message_callback(final_display)
 
         # Update persistent memory blocks with this interaction
         if self.memory and not self._cancelled:

@@ -279,10 +279,49 @@ async def process_query(
 
     msg = await ctx.reply("💭 Thinking deeply..." if use_thinking else "Processing...")
 
+    # State for multi-message streaming
+    response_messages = [msg]
+    target_thread = ctx.channel if isinstance(ctx.channel, discord.Thread) else None
+
     # Create a message callback for status updates
     async def message_callback(text: str) -> None:
+        nonlocal target_thread
+        if not text.strip():
+            return
+
+        # Split text into 2000-character chunks
+        chunks = [text[i : i + 2000] for i in range(0, len(text), 2000)]
+
         try:
-            await msg.edit(content=text[:2000])
+            # 1. Update/Initialize messages for all chunks
+            for i, chunk in enumerate(chunks):
+                if i < len(response_messages):
+                    # Update existing message if content changed
+                    if response_messages[i].content != chunk:
+                        await response_messages[i].edit(content=chunk)
+                else:
+                    # Create new message for additional chunk
+                    if target_thread is None and ctx.guild:
+                        try:
+                            target_thread = await response_messages[0].create_thread(
+                                name="Chat with Waddles", auto_archive_duration=60
+                            )
+                        except Exception as e:
+                            print(f"Failed to create thread during streaming: {e}")
+
+                    send_target = target_thread if target_thread else ctx.channel
+                    # If no thread, reply to the previous message to chain them
+                    if target_thread:
+                        new_msg = await send_target.send(content=chunk)
+                    else:
+                        new_msg = await response_messages[i - 1].reply(content=chunk)
+                    response_messages.append(new_msg)
+
+            # 2. Cleanup: If text shrank, clear subsequent messages
+            for i in range(len(chunks), len(response_messages)):
+                if response_messages[i].content not in ["", ".", "...", "ㅤ"]:
+                    await response_messages[i].edit(content="ㅤ")  # Invisible character
+
         except Exception as e:
             print(f"Failed to edit status message (rate limited or deleted), {e}")
 
@@ -328,28 +367,8 @@ async def process_query(
                     str(result) if result else "I couldn't generate a response."
                 )
 
-            # --- NEW: Chained Reply Chunking ---
-            if len(final_text) <= 2000:
-                # Fits in one message, just edit the original
-                await msg.edit(content=final_text)
-            else:
-                # Edit the first message with the first 2000 characters
-                await msg.edit(content=final_text[:2000])
-
-                # Keep track of the last message to chain replies
-                last_msg = msg
-
-                # Send the remaining text as chained follow-ups
-                for i in range(2000, len(final_text), 2000):
-                    last_msg = await last_msg.reply(content=final_text[i: i + 2000])
-
-            if ctx.guild and not isinstance(ctx.channel, discord.Thread):
-                try:
-                    await msg.create_thread(
-                        name="Chat with Waddles", auto_archive_duration=60
-                    )
-                except Exception as e:
-                    print(f"Failed to create thread on message {msg.id}, {e}")
+            # Ensure the final response is fully streamed/chunked
+            await message_callback(final_text)
 
             if bot._debug is True:
                 history_text = ""
