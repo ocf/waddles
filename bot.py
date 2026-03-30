@@ -160,21 +160,26 @@ class OCFBot(commands.Bot):
         """Reconstruct conversation history from a thread, including the original parent message.
 
         Fetches up to `limit` messages from the thread (before the current message),
-        then attempts to retrieve the original user question from the parent channel
-        that spawned the thread.
+        then fetches the original user question and bot reply from the parent channel
         """
         history: List[ChatMessage] = []
 
-        # Collect in-thread messages (returned newest-first)
+        # Collect in-thread messages (returned newest-first).
         async for msg in thread.history(limit=limit, before=before):
+            if msg.type == discord.MessageType.thread_starter_message:
+                continue
             history.append(await self._build_chat_message(msg))
         history.reverse()
 
-        # Fetch the original user question from the parent channel.
-        # The thread starter is Waddles' reply; its .reference points to the user's message.
+        # Fetch the original exchange from the parent channel.
         try:
-            starter = thread.starter_message or await thread.fetch_message(thread.id)
-            if starter and starter.reference and starter.reference.message_id:
+            starter = thread.starter_message or await thread.parent.fetch_message(thread.id)
+            if not starter:
+                return history
+            starter_chat_msg = await self._build_chat_message(starter)
+            history.insert(0, starter_chat_msg)
+
+            if starter.reference and starter.reference.message_id:
                 original_msg = await thread.parent.fetch_message(
                     starter.reference.message_id
                 )
