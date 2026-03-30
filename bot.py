@@ -290,7 +290,7 @@ async def process_query(
             return
 
         # Split text into 2000-character chunks
-        chunks = [text[i : i + 2000] for i in range(0, len(text), 2000)]
+        chunks = [text[i: i + 2000] for i in range(0, len(text), 2000)]
 
         try:
             # 1. Update/Initialize messages for all chunks
