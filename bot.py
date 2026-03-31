@@ -147,11 +147,11 @@ class OCFBot(commands.Bot):
         """Convert a Discord message into a LlamaIndex ChatMessage with image support."""
         role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
 
-        content = msg.content or ""
-        if role == MessageRole.USER:
-            # Append metadata to user messages for multi-user thread consistency
-            date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
-            content += f"\n\n(Sent by {msg.author.name} in Berkeley at {date_str})"
+        date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
+        raw_content = msg.content or ""
+        
+        # Transcript-style prefixing for multi-user clarity
+        content = f"[{msg.author.name} @ {date_str}]: {raw_content}"
 
         blocks = [TextBlock(text=content)]
         for attachment in msg.attachments:
@@ -160,7 +160,11 @@ class OCFBot(commands.Bot):
                 continue
             blocks.append(ImageBlock(url=data_url))
 
-        return ChatMessage(role=role, blocks=blocks)
+        return ChatMessage(
+            role=role, 
+            blocks=blocks,
+            additional_kwargs={"name": msg.author.name}
+        )
 
     async def _get_thread_history(
         self, thread: discord.Thread, before: discord.Message, limit: int = 20
@@ -356,7 +360,9 @@ async def process_query(
 
     # Append metadata to the current user prompt for multi-user consistency
     date_str = ctx.message.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
-    full_question = (question or "") + f"\n\n(Sent by {ctx.author.name} in Berkeley at {date_str})"
+    full_question = f"[{ctx.author.name} @ {date_str}]: {question or ''}"
+    if not question and image_urls:
+        full_question = f"[{ctx.author.name} @ {date_str}]: Describe this image."
 
     async with ctx.typing():
         try:
@@ -375,7 +381,7 @@ async def process_query(
 
             # Run the workflow
             result = await workflow.run(
-                question=full_question if not (not question and image_urls) else "Describe this image." + f"\n\n(Sent by {ctx.author.name} in Berkeley at {date_str})",
+                question=full_question,
                 user_name=ctx.author.name,
                 persona_prompt=prompt_template_str,
                 use_thinking=use_thinking,

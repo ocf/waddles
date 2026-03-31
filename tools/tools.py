@@ -24,6 +24,10 @@ def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> s
         The formatted prompt string for tool decision.
     """
     prompt = (
+        "You are a helpful assistant in a multi-user Discord thread. "
+        "User messages are formatted as `[Username @ Timestamp]: Content`. "
+        "Pay close attention to who is speaking and address them by name if necessary. "
+        "Multiple different users may be participating in this same thread.\n\n"
         "You must decide what information to search for or what actions to take to answer the user's question.\n"
         "- Call 'search_web' for general internet facts, current events, and news. You can use the 'page' parameter to see more results.\n"
         "- Call 'scrape_url' to read the content of a specific webpage if you are given a URL or need to extract text from an external link.\n"
