@@ -149,7 +149,7 @@ class OCFBot(commands.Bot):
 
         date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
         raw_content = msg.content or ""
-        
+
         # Transcript-style prefixing for multi-user clarity
         content = f"[{msg.author.name} @ {date_str}]: {raw_content}"
 
@@ -161,7 +161,7 @@ class OCFBot(commands.Bot):
             blocks.append(ImageBlock(url=data_url))
 
         return ChatMessage(
-            role=role, 
+            role=role,
             blocks=blocks,
             additional_kwargs={"name": msg.author.name}
         )
