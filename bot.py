@@ -11,6 +11,8 @@ import textwrap
 import traceback
 import base64
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from contextlib import redirect_stdout
 from typing import Dict, Any, List, Optional
 
@@ -145,7 +147,13 @@ class OCFBot(commands.Bot):
         """Convert a Discord message into a LlamaIndex ChatMessage with image support."""
         role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
 
-        blocks = [TextBlock(text=msg.content or "")]
+        content = msg.content or ""
+        if role == MessageRole.USER:
+            # Append metadata to user messages for multi-user thread consistency
+            date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
+            content += f"\n\n(Sent by {msg.author.name} in Berkeley at {date_str})"
+
+        blocks = [TextBlock(text=content)]
         for attachment in msg.attachments:
             data_url = await get_attachment_data_url(attachment)
             if not data_url:
@@ -160,35 +168,48 @@ class OCFBot(commands.Bot):
         """Reconstruct conversation history from a thread, including the original parent message.
 
         Fetches up to `limit` messages from the thread (before the current message),
-        then fetches the original user question and bot reply from the parent channel
+        then fetches the original user question and bot reply from the parent channel.
+        Back-to-back messages from the bot are merged into single ChatMessages.
         """
-        history: List[ChatMessage] = []
+        raw_messages: List[discord.Message] = []
 
-        # Collect in-thread messages (returned newest-first).
+        # 1. Fetch the original exchange from the parent channel
+        try:
+            starter = thread.starter_message or await thread.parent.fetch_message(thread.id)
+            if starter:
+                # If the bot's starter message was a reply to something, that's the original prompt
+                if starter.reference and starter.reference.message_id:
+                    try:
+                        original_msg = await thread.parent.fetch_message(starter.reference.message_id)
+                        raw_messages.append(original_msg)
+                    except (discord.NotFound, discord.HTTPException):
+                        pass
+                raw_messages.append(starter)
+        except Exception as e:
+            print(f"Failed to fetch parent/starter messages for thread {thread.id}, {e}")
+
+        # 2. Fetch thread messages (returned newest-first)
+        thread_msgs = []
         async for msg in thread.history(limit=limit, before=before):
             if msg.type == discord.MessageType.thread_starter_message:
                 continue
-            history.append(await self._build_chat_message(msg))
-        history.reverse()
+            thread_msgs.append(msg)
+        thread_msgs.reverse()
+        raw_messages.extend(thread_msgs)
 
-        # Fetch the original exchange from the parent channel.
-        try:
-            starter = thread.starter_message or await thread.parent.fetch_message(thread.id)
-            if not starter:
-                return history
-            starter_chat_msg = await self._build_chat_message(starter)
-            history.insert(0, starter_chat_msg)
+        # 3. Convert to ChatMessages and merge consecutive Assistant chunks
+        history: List[ChatMessage] = []
+        for msg in raw_messages:
+            chat_msg = await self._build_chat_message(msg)
 
-            if starter.reference and starter.reference.message_id:
-                original_msg = await thread.parent.fetch_message(
-                    starter.reference.message_id
-                )
-                original_chat_msg = await self._build_chat_message(original_msg)
-                history.insert(0, original_chat_msg)
-        except Exception as e:
-            print(
-                f"Failed to fetch original parent message for thread {thread.id}, {e}"
-            )
+            if history and history[-1].role == chat_msg.role == MessageRole.ASSISTANT:
+                # Merge assistant chunks back together
+                history[-1].blocks[0].text += "\n\n" + chat_msg.blocks[0].text
+                # Merge any images
+                if len(chat_msg.blocks) > 1:
+                    history[-1].blocks.extend(chat_msg.blocks[1:])
+            else:
+                history.append(chat_msg)
 
         return history
 
@@ -333,6 +354,10 @@ async def process_query(
             if data_url:
                 image_urls.append(data_url)
 
+    # Append metadata to the current user prompt for multi-user consistency
+    date_str = ctx.message.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
+    full_question = (question or "") + f"\n\n(Sent by {ctx.author.name} in Berkeley at {date_str})"
+
     async with ctx.typing():
         try:
             # Create a fresh workflow instance for this query
@@ -350,7 +375,7 @@ async def process_query(
 
             # Run the workflow
             result = await workflow.run(
-                question=question or "Describe this image." if image_urls else question,
+                question=full_question if not (not question and image_urls) else "Describe this image." + f"\n\n(Sent by {ctx.author.name} in Berkeley at {date_str})",
                 user_name=ctx.author.name,
                 persona_prompt=prompt_template_str,
                 use_thinking=use_thinking,
