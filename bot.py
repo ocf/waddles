@@ -273,7 +273,7 @@ async def generate_thread_title(question: str) -> str:
     try:
         # Clean up the question (truncate if extremely long to avoid context bloat)
         prompt = (
-            "Summarize the following user query into a concise 3-5 word Discord thread title. "
+            "Summarize the following user query into a concise 6-7 word Discord thread title. "
             "Output ONLY the title text, no quotes or punctuation.\n\n"
             f"Query: {question[:500]}"
         )
