@@ -268,6 +268,24 @@ async def get_attachment_data_url(attachment: discord.Attachment) -> Optional[st
         return None
 
 
+async def generate_thread_title(question: str) -> str:
+    """Uses the LLM to generate a concise title for a Discord thread."""
+    try:
+        # Clean up the question (truncate if extremely long to avoid context bloat)
+        prompt = (
+            "Summarize the following user query into a concise 3-5 word Discord thread title. "
+            "Output ONLY the title text, no quotes or punctuation.\n\n"
+            f"Query: {question[:500]}"
+        )
+        response = await llm_standard.acomplete(prompt)
+        title = str(response).strip().strip('"').strip("'").strip(".")
+        # Ensure it's not too long for Discord (max 100 chars) and not empty
+        return title[:100] if title else "Chat with Waddles"
+    except Exception as e:
+        print(f"Failed to generate thread title, {e}")
+        return "Chat with Waddles"
+
+
 async def process_query(
     ctx: commands.Context,
     question: Optional[str],
@@ -304,6 +322,11 @@ async def process_query(
 
     msg = await ctx.reply("💭 Thinking deeply..." if use_thinking else "Processing...")
 
+    # Generate a reasonable thread title based on the user's question
+    thread_title = "Chat with Waddles"
+    if ctx.guild and not isinstance(ctx.channel, discord.Thread):
+        thread_title = await generate_thread_title(question or "Image Query")
+
     # State for multi-message streaming
     response_messages = [msg]
     target_thread = ctx.channel if isinstance(ctx.channel, discord.Thread) else None
@@ -329,7 +352,7 @@ async def process_query(
                     if target_thread is None and ctx.guild:
                         try:
                             target_thread = await response_messages[0].create_thread(
-                                name="Chat with Waddles", auto_archive_duration=60
+                                name=thread_title, auto_archive_duration=60
                             )
                         except Exception as e:
                             print(f"Failed to create thread during streaming: {e}")
@@ -407,7 +430,7 @@ async def process_query(
                     # Double check if a thread was somehow created but target_thread wasn't updated
                     # (though target_thread is nonlocal and should be updated if created in callback)
                     await response_messages[0].create_thread(
-                        name="Chat with Waddles", auto_archive_duration=60
+                        name=thread_title, auto_archive_duration=60
                     )
                 except Exception as e:
                     # Ignore if thread already exists or permissions issues
