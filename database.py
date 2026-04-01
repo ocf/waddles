@@ -200,6 +200,22 @@ def get_index() -> VectorStoreIndex:
     return index
 
 
+def get_nodes(index: VectorStoreIndex) -> List[BaseNode]:
+    """Retrieve all nodes from the index to populate keyword search (BM25)."""
+    # Try to get them from the docstore if possible
+    try:
+        nodes = list(index.docstore.get_all_nodes())
+        if nodes:
+            return nodes
+    except Exception:
+        pass
+
+    # Fallback: Reload documents if the index docstore is empty/remote
+    print("📂 Reloading documents to populate keyword index...")
+    documents = _load_documents()
+    return Settings.node_parser.get_nodes_from_documents(documents)
+
+
 def update_index(index: VectorStoreIndex, run_script: bool = True) -> int:
     """Pulls the latest files and only embeds documents that have changed.
 

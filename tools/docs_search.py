@@ -1,7 +1,10 @@
 from llama_index.core import VectorStoreIndex
 from llama_index.core.tools import FunctionTool
+from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.retrievers.bm25 import BM25Retriever
 
 from config import DOCS_DIR, DOCS_TOP_N
+from database import get_nodes
 
 
 def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
@@ -10,6 +13,9 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
     Args:
         index: The VectorStoreIndex containing OCF documentation.
     """
+
+    # Pre-fetch nodes for BM25 (this happens once when the tool is created)
+    all_nodes = get_nodes(index)
 
     async def search_docs(query: str) -> str:
         """
@@ -24,8 +30,24 @@ def create_docs_search_tool(index: VectorStoreIndex) -> FunctionTool:
             Relevant documentation passages.
         """
         try:
-            # Initial retrieval
-            retriever = index.as_retriever(similarity_top_k=DOCS_TOP_N)
+            # 1. Semantic (Vector) Retriever
+            vector_retriever = index.as_retriever(similarity_top_k=DOCS_TOP_N)
+
+            # 2. Keyword (BM25) Retriever
+            bm25_retriever = BM25Retriever.from_defaults(
+                nodes=all_nodes,
+                similarity_top_k=DOCS_TOP_N
+            )
+
+            # 3. Combined Hybrid Retriever (Fusion)
+            retriever = QueryFusionRetriever(
+                [vector_retriever, bm25_retriever],
+                similarity_top_k=DOCS_TOP_N,
+                num_queries=1,  # We only need the original query for standard hybrid
+                mode="reciprocal_rerank",
+                use_async=True,
+            )
+
             nodes = await retriever.aretrieve(query)
 
             if not nodes:
