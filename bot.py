@@ -145,15 +145,20 @@ class OCFBot(commands.Bot):
 
     async def _build_chat_message(self, msg: discord.Message) -> ChatMessage:
         """Convert a Discord message into a LlamaIndex ChatMessage with image support."""
-        role = MessageRole.ASSISTANT if msg.author == self.user else MessageRole.USER
+        is_bot = msg.author == self.user
+        role = MessageRole.ASSISTANT if is_bot else MessageRole.USER
 
-        date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
         raw_content = msg.content or ""
-
-        # Transcript-style prefixing for multi-user clarity
-        content = f"[{msg.author.name} @ {date_str}]: {raw_content}"
+        if not is_bot:
+            # Transcript-style prefixing for multi-user clarity (User messages only)
+            date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
+            content = f"[{msg.author.name} @ {date_str}]: {raw_content}"
+        else:
+            # Do NOT prefix Waddles' own messages in history
+            content = raw_content
 
         blocks = [TextBlock(text=content)]
+
         for attachment in msg.attachments:
             data_url = await get_attachment_data_url(attachment)
             if not data_url:
