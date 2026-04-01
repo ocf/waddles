@@ -391,7 +391,7 @@ async def process_query(
 
     # Append metadata to the current user prompt for multi-user consistency
     date_str = ctx.message.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
-    display_name = getattr(ctx.author, "display_name", ctx.author.name)
+    display_name = ctx.author.display_name
     full_question = f"[{display_name} ({ctx.author.name}) @ {date_str}]: {question or ''}"
     if not question and image_urls:
         full_question = f"[{display_name} ({ctx.author.name}) @ {date_str}]: Describe this image."
@@ -743,7 +743,7 @@ async def persona_view(ctx, name: str):
 async def note(ctx, *, content: str):
     file_path = os.path.join(DOCS_DIR, "others.txt")
     try:
-        display_name = getattr(ctx.author, "display_name", ctx.author.name)
+        display_name = ctx.author.display_name
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(f"\nNote from {display_name} ({ctx.author.name}): {content}\n")
         await ctx.reply(
