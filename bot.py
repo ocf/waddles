@@ -150,9 +150,11 @@ class OCFBot(commands.Bot):
 
         raw_content = msg.content or ""
         if not is_bot:
-            # Transcript-style prefixing for multi-user clarity (User messages only)
+            # Transcript-style prefixing: [Display Name (username) @ Time]
             date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
-            content = f"[{msg.author.name} @ {date_str}]: {raw_content}"
+            author = msg.author
+            display_name = getattr(author, "display_name", author.name)
+            content = f"[{display_name} ({author.name}) @ {date_str}]: {raw_content}"
         else:
             # Do NOT prefix Waddles' own messages in history
             content = raw_content
@@ -388,9 +390,10 @@ async def process_query(
 
     # Append metadata to the current user prompt for multi-user consistency
     date_str = ctx.message.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
-    full_question = f"[{ctx.author.name} @ {date_str}]: {question or ''}"
+    display_name = getattr(ctx.author, "display_name", ctx.author.name)
+    full_question = f"[{display_name} ({ctx.author.name}) @ {date_str}]: {question or ''}"
     if not question and image_urls:
-        full_question = f"[{ctx.author.name} @ {date_str}]: Describe this image."
+        full_question = f"[{display_name} ({ctx.author.name}) @ {date_str}]: Describe this image."
 
     async with ctx.typing():
         try:

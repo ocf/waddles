@@ -26,7 +26,7 @@ Waddles maintains context via Discord threads rather than just a persistent data
 
 ### 3. Multi-User Support
 To handle threads where multiple users are active:
-- **Transcript Format:** All user messages are prefixed as `[Username @ Timestamp]: Content`.
+- **Transcript Format:** All user messages are prefixed as `[Display Name (username) @ Timestamp]: Content`. This includes both their server-specific name and their global account handle.
 - **System Instruction:** The system prompt explicitly informs the LLM that it is in a multi-user environment and explains this transcript format.
 - **Consistency:** This metadata is applied both to the current query and all historical messages in the thread.
 
