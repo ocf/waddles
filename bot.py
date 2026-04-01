@@ -742,8 +742,9 @@ async def persona_view(ctx, name: str):
 async def note(ctx, *, content: str):
     file_path = os.path.join(DOCS_DIR, "others.txt")
     try:
+        display_name = getattr(ctx.author, "display_name", ctx.author.name)
         with open(file_path, "a", encoding="utf-8") as f:
-            f.write(f"\nNote from {ctx.author.name}: {content}\n")
+            f.write(f"\nNote from {display_name} ({ctx.author.name}): {content}\n")
         await ctx.reply(
             "✅ Note saved! Waddles will learn this on the next `?reload` or hourly sync."
         )
