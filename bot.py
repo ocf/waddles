@@ -216,7 +216,7 @@ class OCFBot(commands.Bot):
 
             if history and history[-1].role == chat_msg.role == MessageRole.ASSISTANT:
                 # Merge assistant chunks back together
-                history[-1].blocks[0].text += "\n\n" + chat_msg.blocks[0].text
+                history[-1].blocks[0].text += chat_msg.blocks[0].text
                 # Merge any images
                 if len(chat_msg.blocks) > 1:
                     history[-1].blocks.extend(chat_msg.blocks[1:])
