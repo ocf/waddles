@@ -151,9 +151,10 @@ class OCFBot(commands.Bot):
         raw_content = msg.content or ""
         if not is_bot:
             # Transcript-style prefixing: [Display Name (username) @ Time]
+            # .display_name prioritizes the server-specific nickname.
             date_str = msg.created_at.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d %H:%M:%S")
             author = msg.author
-            display_name = getattr(author, "display_name", author.name)
+            display_name = author.display_name
             content = f"[{display_name} ({author.name}) @ {date_str}]: {raw_content}"
         else:
             # Do NOT prefix Waddles' own messages in history
