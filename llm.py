@@ -1,6 +1,5 @@
 from llama_index.llms.openai_like import OpenAILike
 from config import (
-    LLM_REPETITION_PENALTY,
     VLLM_URL,
     MODEL_NAME,
     LLM_CONTEXT_WINDOW,
