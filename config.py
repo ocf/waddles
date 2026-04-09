@@ -18,7 +18,7 @@ ADMIN_ROLE_ID = 735620451295821906
 
 # --- LLM Settings ---
 OLLAMA_URL = "http://127.0.0.1:11434"
-SGLANG_URL = "http://127.0.0.1:30000/v1"
+VLLM_URL = "http://127.0.0.1:30000/v1"
 MODEL_NAME = "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"
 EMBEDDING_NAME = "qwen3-embedding:8b"
 
@@ -40,11 +40,9 @@ os.makedirs(MEMORY_DIR, exist_ok=True)
 # --- LLM Configuration ---
 LLM_CONTEXT_WINDOW = 32768
 LLM_TIMEOUT = 360.0
-LLM_TEMPERATURE = 0.1
-LLM_FREQUENCY_PENALTY = 0.1
-LLM_PRESENCE_PENALTY = 0.3
-LLM_REPETITION_PENALTY = 1.05
-LLM_MIN_P = 0.05
+LLM_TEMPERATURE = 1.0
+LLM_TOP_P = 0.95
+LLM_TOP_K = 64
 
 # --- Embedding Configuration ---
 EMBED_BATCH_SIZE = 128

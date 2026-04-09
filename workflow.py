@@ -87,6 +87,9 @@ class OCFAgentWorkflow(Workflow):
         system_content = self._persona_prompt + "\n\n"
         system_content += get_tool_prompt(self._user_name, self._use_thinking)
 
+        if self._use_thinking:
+            system_content += "\n\nYou must begin your response with the <|think|> token to reason through this before answering."
+
         # Build initial history: Priority to explicitly provided history
         past_history = []
         if initial_history:
@@ -162,8 +165,19 @@ class OCFAgentWorkflow(Workflow):
 
             # 1. Accumulate Thinking text (from raw deltas)
             think_delta = chunk.additional_kwargs.get("thinking_delta", "")
-            if think_delta:
-                thinking_text += think_delta
+            if hasattr(chunk, "raw") and chunk.raw is not None:
+                try:
+                    raw_delta = chunk.raw.choices[0].delta
+                    if hasattr(raw_delta, "reasoning_content") and raw_delta.reasoning_content:
+                        think_delta = raw_delta.reasoning_content
+                except (IndexError, AttributeError):
+                    pass
+
+            if not think_delta:
+                think_delta = chunk.additional_kwargs.get("reasoning_content", "")
+
+            if not think_delta:
+                think_delta = chunk.additional_kwargs.get("thinking_delta", "")
 
             # 2. Accumulate Regular text (from raw deltas)
             if chunk.delta:

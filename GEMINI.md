@@ -8,7 +8,7 @@
 - **Discord API:** `discord.py`
 - **AI Framework:** `LlamaIndex` (utilizing the Workflows system for agentic reasoning)
 - **Vector Database:** `ChromaDB` (for document indexing and persistent user memory)
-- **LLM Backend:** Supports local hosting via `Ollama` and `SGLang`
+- **LLM Backend:** Supports local hosting via `Ollama` and `vLLM`
 - **Package Management:** `uv`
 - **Deployment:** Docker & Docker Compose
 
@@ -52,7 +52,7 @@ Waddles handles long responses (exceeding Discord's 2000-character limit) by:
 ### Prerequisites
 - **Python 3.11+**
 - **uv** (recommended for dependency management)
-- **Local LLM Services:** `Ollama` and `SGLang` should be running as configured in `config.py`.
+- **Local LLM Services:** `Ollama` and `vLLM` should be running as configured in `config.py`.
 - **Environment Variables:** `DISCORD_TOKEN` must be set.
 
 ### Development Commands

@@ -28,7 +28,7 @@ from config import (
     ADMIN_ROLE_ID,
     DOCS_DIR,
     STATUS_FILE,
-    SGLANG_URL,
+    VLLM_URL,
 )
 from database import (
     setup_llm,
@@ -53,7 +53,7 @@ from events import ResponseCompleteEvent
 
 
 # --- 1. SETUP LLAMAINDEX ---
-print(f"Connecting to SGLang at {SGLANG_URL}...")
+print(f"Connecting to vLLM at {VLLM_URL}...")
 
 llm_standard = get_llm(thinking=False)
 llm_thinking = get_llm(thinking=True)

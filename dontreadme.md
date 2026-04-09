@@ -1,6 +1,6 @@
 # Waddles
 
-## SGLang
+## SGLang (Old)
 
 ```bash
 cd ~/waddles

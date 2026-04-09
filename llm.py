@@ -1,14 +1,13 @@
 from llama_index.llms.openai_like import OpenAILike
 from config import (
     LLM_REPETITION_PENALTY,
-    SGLANG_URL,
+    VLLM_URL,
     MODEL_NAME,
     LLM_CONTEXT_WINDOW,
     LLM_TIMEOUT,
     LLM_TEMPERATURE,
-    LLM_FREQUENCY_PENALTY,
-    LLM_PRESENCE_PENALTY,
-    LLM_MIN_P,
+    LLM_TOP_P,
+    LLM_TOP_K,
 )
 
 
@@ -23,7 +22,7 @@ def get_llm(thinking: bool) -> OpenAILike:
     """
     return OpenAILike(
         model=MODEL_NAME,
-        api_base=SGLANG_URL,
+        api_base=VLLM_URL,
         api_key="fake-key",
         context_window=LLM_CONTEXT_WINDOW,
         is_chat_model=True,
@@ -31,13 +30,11 @@ def get_llm(thinking: bool) -> OpenAILike:
         timeout=LLM_TIMEOUT,
         temperature=LLM_TEMPERATURE,
         additional_kwargs={
-            "stop": ["<|im_end|>", "<|im_start|>", "\nUser:"],
-            "frequency_penalty": LLM_FREQUENCY_PENALTY,
-            "presence_penalty": LLM_PRESENCE_PENALTY,
+            "stop": ["<turn|>", "<|turn>", "<|tool_response>"],
+            "top_p": LLM_TOP_P,
             "extra_body": {
-                "chat_template_kwargs": {"enable_thinking": thinking},
-                "repetition_penalty": LLM_REPETITION_PENALTY,
-                "min_p": LLM_MIN_P
+                "top_k": LLM_TOP_K,
+                "chat_template_kwargs": {"enable_thinking": thinking}
             }
         }
     )
