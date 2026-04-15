@@ -12,6 +12,34 @@ services:
       - bot_storage:/app/storage
       - bot_docs:/app/docs
 
+  vllm:
+    image: vllm/vllm-openai:gemma4-cu130
+    container_name: waddles_vllm
+    restart: unless-stopped
+    ipc: host
+    network_mode: host
+    shm_size: 16G
+    environment:
+      - CUDA_VISIBLE_DEVICES=0,2
+      - NCCL_P2P_DISABLE=1
+    volumes:
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: >
+      --model cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit
+      --tensor-parallel-size 2
+      --max-model-len 32768
+      --gpu-memory-utilization 0.4
+      --host 0.0.0.0
+      --port 30000
+      --disable-custom-all-reduce
+
   watchtower:
     image: containrrr/watchtower
     container_name: waddles_watchtower
