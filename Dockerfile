@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install git, basic utilities, and gnupg (required for the Node.js setup script)
-RUN apt-get update && apt-get install -y git bash wget curl gnupg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git bash wget curl vim gnupg && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (v20 LTS) directly from NodeSource
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
