@@ -179,6 +179,9 @@ class OCFAgentWorkflow(Workflow):
             if not think_delta:
                 think_delta = chunk.additional_kwargs.get("thinking_delta", "")
 
+            if think_delta:
+                thinking_text += think_delta
+
             # 2. Accumulate Regular text (from raw deltas)
             if chunk.delta:
                 full_content += chunk.delta
