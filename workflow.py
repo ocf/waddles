@@ -88,7 +88,7 @@ class OCFAgentWorkflow(Workflow):
         system_content += get_tool_prompt(self._user_name, self._use_thinking)
 
         if self._use_thinking:
-            system_content += "\n\nYou must begin your response with the <|think|> token to reason through this before answering."
+            system_content += "\n\nYou must begin your response with the <|think> token to reason through this before answering."
 
         # Build initial history: Priority to explicitly provided history
         past_history = []
