@@ -21,6 +21,7 @@ dependencies = [
     "llama-index-vector-stores-chroma==0.5.5",
     "ocflib",
     "trafilatura>=2.0.0",
+    "yfinance>=1.2.2",
 ]
 
 [tool.uv.sources]

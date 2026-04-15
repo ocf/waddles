@@ -11,6 +11,7 @@ from tools.user_info import create_user_info_tool
 from tools.web_search import create_web_search_tool
 from tools.web_scrape import create_web_scrape_tool
 from tools.delegate import create_delegation_tool
+from tools.stock_info import create_stock_info_tool
 
 
 def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> str:
@@ -35,6 +36,7 @@ def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> s
         "- Call 'search_docs' for internal OCF rules, services, policies, or any OCF-related question.\n"
         "- Call 'get_ocf_user_info' if the user asks for details or printing quotas for a specific OCF username.\n"
         "- Call 'run_python' if you need to perform complex math calculations, manipulate data, or run custom logic.\n"
+        "- Call 'get_stock_info' to retrieve current financial metrics and stock prices for a given ticker symbol.\n"
         "You should call as many tools as necessary to fully address the user's question.\n"
         "Unless it is definitely unrelated, ALWAYS call 'search_docs' to check internal documentation first.")
 
@@ -65,6 +67,7 @@ def get_all_tools(index: VectorStoreIndex, depth: int = 0) -> dict:
         "search_docs": create_docs_search_tool(index),
         "get_ocf_user_info": create_user_info_tool(),
         "run_python": create_python_run_tool(),
+        "get_stock_info": create_stock_info_tool(),
     }
 
     # Only add delegation tool if we haven't reached max depth
