@@ -5,13 +5,13 @@ from zoneinfo import ZoneInfo
 
 from llama_index.core import VectorStoreIndex
 
+from tools.delegate import create_delegation_tool
 from tools.docs_search import create_docs_search_tool
 from tools.python_run import create_python_run_tool
-from tools.user_info import create_user_info_tool
-from tools.web_search import create_web_search_tool
-from tools.web_scrape import create_web_scrape_tool
-from tools.delegate import create_delegation_tool
 from tools.stock_info import create_stock_info_tool
+from tools.user_info import create_user_info_tool
+from tools.web_scrape import create_web_scrape_tool
+from tools.web_search import create_web_search_tool
 
 
 def get_tool_prompt(user_name: str = "unknown", use_thinking: bool = False) -> str:
@@ -58,6 +58,7 @@ def get_all_tools(index: VectorStoreIndex, depth: int = 0) -> dict:
         depth: The current recursion depth of the agent (used to prevent infinite delegation).
     """
     from llm import get_llm
+
     llm_standard = get_llm(thinking=False)
     llm_thinking = get_llm(thinking=True)
 
