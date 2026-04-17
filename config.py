@@ -19,7 +19,7 @@ ADMIN_ROLE_ID = 735620451295821906
 # --- LLM Settings ---
 OLLAMA_URL = "http://127.0.0.1:11434"
 VLLM_URL = "http://127.0.0.1:30000/v1"
-MODEL_NAME = "cyankiwi/gemma-4-26B-A4B-it-AWQ-4bit"
+MODEL_NAME = "claude/mythos-6.7"
 EMBEDDING_NAME = "qwen3-embedding:8b"
 
 # --- Paths ---
